@@ -83,7 +83,7 @@ Auth: `RegisterUser`, `LoginUser`, `GetCurrentUser`
 |---|---|---|
 | `users` | `id`, `email` UNIQUE, `password_hash`, `name`, `role` ENUM(CUSTOMER,FARMER), `created_at` | |
 | `varieties` | `id`, `slug` UNIQUE, `name`, `tag`, `description`, `color_hex`, `price_per_kg_czk` DECIMAL(10,2), `stock_kg` DECIMAL(10,2), `capacity_kg` DECIMAL(10,2), `sort_order`, `is_active`, timestamps | `stock_kg` je jediný zdroj pravdy o skladu |
-| `orders` | `id`, `code` UNIQUE, `customer_name`, `customer_email`, `customer_phone`, `note`, `delivery_method` ENUM, `payment_method` ENUM, `subtotal_czk`, `delivery_fee_czk`, `total_czk`, `status` ENUM(NEW,READY,COLLECTED), `user_id` FK NULL, `created_at` | `user_id` NULL = host bez účtu |
+| `orders` | `id`, `code` UNIQUE, `public_token` UNIQUE, `customer_name`, `customer_email`, `customer_phone`, `note`, `delivery_method` ENUM, `payment_method` ENUM, `subtotal_czk`, `delivery_fee_czk`, `total_czk`, `status` ENUM(NEW,READY,COLLECTED), `user_id` FK NULL, `created_at` | `user_id` NULL = host bez účtu; dvě identity — viz níž |
 | `order_items` | `id`, `order_id` FK CASCADE, `variety_id` FK RESTRICT, `variety_name`, `unit_price_czk`, `quantity_kg`, `line_total_czk` | `variety_name` a `unit_price_czk` jsou **snapshoty** |
 | `news_posts` | `id`, `title`, `body`, `tag` ENUM(HARVEST,STORAGE,FIELD), `image_url` NULL, `published_at`, `author_id` FK | |
 | `fields` | `id`, `name`, `variety_name`, `area_m2`, `status` ENUM(GROWING,HARVESTING,HARVESTED), `yield_kg`, `is_estimate` | mapa polí |
@@ -119,7 +119,13 @@ v administraci vidět tak jako tak.
 v opačném pořadí by se jinak zablokovaly navzájem.
 
 Doprava: `Rozvoz po okolí` = 60 Kč, zdarma nad 600 Kč mezisoučtu. `Osobní odběr` = 0 Kč.
-Kód objednávky se generuje v transakci.
+
+**Objednávka má dvě identity.** `code` (`#2610`) je lidský štítek do e-mailů a administrace;
+odvozuje se z auto-increment `id` (`#${2609 + id}`) až po insertu, uvnitř téže transakce —
+`COUNT(*)+1` by dvěma souběžným transakcím vrátil stejné číslo. `public_token` (24 náhodných
+bajtů base64url) je to jediné, co jde do veřejné URL potvrzení. Kdyby v URL byl sekvenční
+kód, kdokoli by vyjmenoval `/rezervace/2611` a přečetl jméno, e-mail, telefon a poznámku
+cizího zákazníka.
 
 ## 6. Stránky
 
@@ -129,7 +135,7 @@ Kód objednávky se generuje v transakci.
 | `/burza` | Karty odrůd, výběr množství, přidání do košíku | veřejné |
 | `/sklad` | KPI, zásobníky, 14denní graf výkopu, mapa polí | veřejné |
 | `/kosik` | Položky, kontakt, převzetí, platba, souhrn, odeslání | veřejné |
-| `/rezervace/[code]` | Potvrzení + náhled obou odeslaných e-mailů | veřejné (kód je nevypočitatelný) |
+| `/rezervace/[token]` | Potvrzení + náhled obou odeslaných e-mailů | veřejné přes náhodný token |
 | `/admin` | Taby: Přehled / Sklad a ceny / Objednávky / Novinky | role `FARMER` |
 | `/api/health` | Liveness + kontrola DB | veřejné |
 
@@ -157,8 +163,11 @@ Multi-stage `deps → builder → runner`:
 - `HEALTHCHECK` na `/api/health`
 - `.dockerignore` vylučuje `.git`, `node_modules`, `.env*`, testy
 
-`docker-compose.yml` (vývoj): `app` + `mysql:8` + `mailpit`. MySQL port ven nevystaven,
-komunikace po interní síti. Mailpit odchytává odchozí SMTP, UI na `:8025`.
+`docker-compose.yml` je **dvoukontejnerový**: `app` (Next.js) a `db` (MySQL 8.4), propojené
+přímo přes interní bridge síť jako `db:3306`. Port databáze se na hostitele nepublikuje;
+port aplikace jen na `127.0.0.1:3000`. Odchytávač e-mailů Mailpit je za profilem `mail`
+(`docker compose --profile mail up`), takže výchozí sestava zůstává přesně dvoukontejnerová.
+Migrace se pouštějí v entrypointu při startu, ne při buildu — build nemá mít přístup k DB.
 `docker-compose.prod.yml` počítá s externí DB a SMTP, `.env` mimo image.
 
 ## 9. CI/CD (GitHub Actions)

@@ -939,3 +939,2484 @@ git commit -m "feat(domain): value objects pro mnozstvi, penize, e-mail a barvu"
 ```
 
 ---
+
+### Task 4: Doménové entity
+
+**Files:**
+- Create: `src/domain/entities/variety.ts`, `order.ts`, `news-post.ts`, `field.ts`, `harvest-entry.ts`, `storage-reading.ts`, `user.ts`
+- Test: `tests/unit/domain/variety.test.ts`, `tests/unit/domain/order.test.ts`
+
+**Interfaces:**
+- Consumes: `Kilograms`, `Money`, `EmailAddress`, `HexColor`, enumy a chyby z Tasku 3
+- Produces:
+  ```ts
+  // variety.ts
+  export interface VarietyProps {
+    id: number; slug: string; name: string; tag: string; description: string
+    color: HexColor; pricePerKg: Money; stock: Kilograms; capacity: Kilograms
+    sortOrder: number; isActive: boolean
+  }
+  export class Variety {
+    static rehydrate(props: VarietyProps): Variety
+    readonly id: number; readonly slug: string; readonly name: string
+    readonly tag: string; readonly description: string; readonly color: HexColor
+    readonly pricePerKg: Money; readonly stock: Kilograms; readonly capacity: Kilograms
+    readonly sortOrder: number; readonly isActive: boolean
+    hasStockFor(q: Kilograms): boolean
+    withdraw(q: Kilograms): Variety          // InsufficientStockError, jinak nová instance
+    fillPercent(): number                     // 0–100, zaokrouhleno
+    isSoldOut(): boolean
+  }
+
+  // order.ts
+  export interface OrderItemProps {
+    varietyId: number; varietyName: string; unitPrice: Money; quantity: Kilograms
+  }
+  export class OrderItem {
+    static create(props: OrderItemProps): OrderItem
+    readonly varietyId: number; readonly varietyName: string
+    readonly unitPrice: Money; readonly quantity: Kilograms
+    get lineTotal(): Money
+  }
+  export interface OrderCustomer {
+    name: string; email: EmailAddress; phone: string; note: string
+  }
+  export interface OrderProps {
+    id: number; code: string; publicToken: string; customer: OrderCustomer
+    items: OrderItem[]; delivery: DeliveryMethod; payment: PaymentMethod
+    status: OrderStatus; userId: number | null; createdAt: Date
+  }
+  export class Order {
+    static readonly FREE_DELIVERY_THRESHOLD: Money   // 600 Kč
+    static readonly DELIVERY_FEE: Money              // 60 Kč
+    static deliveryFeeFor(delivery: DeliveryMethod, subtotal: Money): Money
+    static rehydrate(props: OrderProps): Order
+    readonly id: number; readonly code: string; readonly publicToken: string
+    readonly customer: OrderCustomer; readonly items: readonly OrderItem[]
+    readonly delivery: DeliveryMethod; readonly payment: PaymentMethod
+    readonly status: OrderStatus; readonly userId: number | null; readonly createdAt: Date
+    get subtotal(): Money
+    get deliveryFee(): Money
+    get total(): Money
+    get totalKg(): Kilograms
+    get itemsLabel(): string        // "Bernie 20 kg · Red Anna 5 kg"
+    withStatus(next: OrderStatus): Order
+  }
+
+  // news-post.ts
+  export interface NewsPostProps {
+    id: number; title: string; body: string; tag: NewsTag
+    imageUrl: string | null; publishedAt: Date; authorId: number | null
+  }
+  export class NewsPost { static rehydrate(p: NewsPostProps): NewsPost; /* readonly gettery */ }
+
+  // field.ts
+  export interface FieldProps {
+    id: number; name: string; varietyName: string; areaM2: number
+    status: FieldStatus; yieldKg: Kilograms; isEstimate: boolean; sortOrder: number
+  }
+  export class Field { static rehydrate(p: FieldProps): Field }
+
+  // harvest-entry.ts
+  export interface HarvestEntryProps { id: number; date: Date; dug: Kilograms; stock: Kilograms }
+  export class HarvestEntry { static rehydrate(p: HarvestEntryProps): HarvestEntry }
+
+  // storage-reading.ts
+  export interface StorageReadingProps { id: number; recordedAt: Date; temperatureC: number; humidityPct: number }
+  export class StorageReading { static rehydrate(p: StorageReadingProps): StorageReading }
+
+  // user.ts
+  export interface UserProps { id: number; email: EmailAddress; name: string; role: UserRole; passwordHash: string; createdAt: Date }
+  export class User {
+    static rehydrate(p: UserProps): User
+    readonly id: number; readonly email: EmailAddress; readonly name: string
+    readonly role: UserRole; readonly passwordHash: string; readonly createdAt: Date
+    isFarmer(): boolean
+  }
+  ```
+
+`rehydrate` místo `create` je záměr: identitu (`id`, `code`, `publicToken`) přiděluje databáze,
+doména ji nevymýšlí. Nové objednávky proto skládá `ReserveOrder` z `OrderItem` a repozitář
+vrátí hotový `Order` po insertu.
+
+- [ ] **Step 1: Napsat padající test pro `Variety.withdraw`**
+
+`tests/unit/domain/variety.test.ts`:
+```ts
+import { describe, expect, it } from 'vitest'
+import { Variety } from '@/domain/entities/variety'
+import { Kilograms } from '@/domain/value-objects/kilograms'
+import { Money } from '@/domain/value-objects/money'
+import { HexColor } from '@/domain/value-objects/hex-color'
+import { InsufficientStockError } from '@/domain/errors'
+
+const bernie = (stockKg: number) =>
+  Variety.rehydrate({
+    id: 1, slug: 'bernie', name: 'Bernie', tag: 'lahůdková', description: 'Pevná žlutá dužnina.',
+    color: HexColor.of('#c98a2b'), pricePerKg: Money.fromCzk(22),
+    stock: Kilograms.of(stockKg), capacity: Kilograms.of(160), sortOrder: 0, isActive: true,
+  })
+
+describe('Variety', () => {
+  it('odečte množství a vrátí novou instanci', () => {
+    const before = bernie(10)
+    const after = before.withdraw(Kilograms.of(2.5))
+    expect(after.stock.value).toBe(7.5)
+    expect(before.stock.value).toBe(10)
+  })
+
+  it('odmítne odběr nad stav skladu', () => {
+    expect(() => bernie(2).withdraw(Kilograms.of(2.5))).toThrow(InsufficientStockError)
+  })
+
+  it('dovolí odebrat přesně celý sklad', () => {
+    expect(bernie(2.5).withdraw(Kilograms.of(2.5)).stock.isZero()).toBe(true)
+  })
+
+  it('spočítá naplněnost zásobníku v procentech', () => {
+    expect(bernie(80).fillPercent()).toBe(50)
+    expect(bernie(0).fillPercent()).toBe(0)
+  })
+
+  it('označí vyprodanou odrůdu', () => {
+    expect(bernie(0).isSoldOut()).toBe(true)
+    expect(bernie(0.5).isSoldOut()).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 2: Napsat padající test pro výpočty `Order`**
+
+`tests/unit/domain/order.test.ts`:
+```ts
+import { describe, expect, it } from 'vitest'
+import { Order, OrderItem } from '@/domain/entities/order'
+import { DeliveryMethod, OrderStatus, PaymentMethod } from '@/domain/enums'
+import { Kilograms } from '@/domain/value-objects/kilograms'
+import { Money } from '@/domain/value-objects/money'
+import { EmailAddress } from '@/domain/value-objects/email-address'
+
+const item = (name: string, czk: number, kg: number) =>
+  OrderItem.create({ varietyId: 1, varietyName: name, unitPrice: Money.fromCzk(czk), quantity: Kilograms.of(kg) })
+
+const order = (items: OrderItem[], delivery: DeliveryMethod) =>
+  Order.rehydrate({
+    id: 1, code: '#2610', publicToken: 't'.repeat(32),
+    customer: { name: 'Jan Novák', email: EmailAddress.of('jan@email.cz'), phone: '', note: '' },
+    items, delivery, payment: PaymentMethod.QR_CODE, status: OrderStatus.NEW,
+    userId: null, createdAt: new Date('2026-09-10T18:00:00Z'),
+  })
+
+describe('Order', () => {
+  it('sečte položky do mezisoučtu', () => {
+    expect(order([item('Bernie', 22, 2.5), item('Marabel', 17, 7.5)], DeliveryMethod.PICKUP).subtotal.czk)
+      .toBe(182.5)
+  })
+
+  it('u osobního odběru neúčtuje dopravu', () => {
+    expect(order([item('Bernie', 22, 2.5)], DeliveryMethod.PICKUP).deliveryFee.czk).toBe(0)
+  })
+
+  it('u rozvozu účtuje 60 Kč do 600 Kč mezisoučtu', () => {
+    expect(order([item('Bernie', 22, 2.5)], DeliveryMethod.LOCAL_DELIVERY).deliveryFee.czk).toBe(60)
+  })
+
+  it('u rozvozu je doprava zdarma nad 600 Kč mezisoučtu', () => {
+    expect(order([item('Bernie', 22, 30)], DeliveryMethod.LOCAL_DELIVERY).deliveryFee.czk).toBe(0)
+  })
+
+  it('přesně na 600 Kč dopravu ještě účtuje', () => {
+    // hranice je "nad 600", ne "od 600"
+    expect(order([item('Marabel', 20, 30)], DeliveryMethod.LOCAL_DELIVERY).subtotal.czk).toBe(600)
+    expect(order([item('Marabel', 20, 30)], DeliveryMethod.LOCAL_DELIVERY).deliveryFee.czk).toBe(60)
+  })
+
+  it('sečte celkovou hmotnost a složí popisek položek', () => {
+    const o = order([item('Bernie', 22, 20), item('Red Anna', 19, 5)], DeliveryMethod.PICKUP)
+    expect(o.totalKg.value).toBe(25)
+    expect(o.itemsLabel).toBe('Bernie 20 kg · Red Anna 5 kg')
+  })
+})
+```
+
+- [ ] **Step 3: Spustit testy, ověřit, že padají**
+
+Run: `npx vitest run tests/unit/domain`
+Expected: FAIL — entity neexistují
+
+- [ ] **Step 4: Implementovat entity**
+
+`Variety.withdraw`:
+```ts
+withdraw(q: Kilograms): Variety {
+  if (!this.hasStockFor(q)) {
+    throw new InsufficientStockError(this.name, this.stock.value, q.value)
+  }
+  return Variety.rehydrate({ ...this.props, stock: this.stock.minus(q) })
+}
+hasStockFor(q: Kilograms): boolean { return this.stock.gte(q) }
+fillPercent(): number {
+  const cap = this.capacity.value
+  if (cap <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((this.stock.value / cap) * 100)))
+}
+```
+
+`Order.deliveryFeeFor`:
+```ts
+static readonly FREE_DELIVERY_THRESHOLD = Money.fromCzk(600)
+static readonly DELIVERY_FEE = Money.fromCzk(60)
+
+static deliveryFeeFor(delivery: DeliveryMethod, subtotal: Money): Money {
+  if (delivery !== DeliveryMethod.LOCAL_DELIVERY) return Money.zero()
+  return subtotal.gt(Order.FREE_DELIVERY_THRESHOLD) ? Money.zero() : Order.DELIVERY_FEE
+}
+```
+
+`itemsLabel` formátuje množství přes `formatKg` ze `shared/format.ts` (`cs-CZ`, bez zbytečné
+desetinné nuly): `this.items.map(i => `${i.varietyName} ${formatKg(i.quantity)}`).join(' · ')`.
+
+- [ ] **Step 5: Spustit testy, ověřit průchod**
+
+Run: `npx vitest run tests/unit/domain`
+Expected: PASS
+
+- [ ] **Step 6: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(domain): entity odrudy, objednavky, novinky, pole a uzivatele"
+git push
+```
+
+---
+
+### Task 5: Doménové porty
+
+**Files:**
+- Create: `src/domain/ports/repositories.ts`, `src/domain/ports/unit-of-work.ts`, `src/domain/ports/services.ts`
+- Create: `src/shared/result.ts`, `src/shared/logger.ts`, `src/shared/format.ts`
+- Test: `tests/unit/shared/format.test.ts`
+
+**Interfaces:**
+- Consumes: entity a value objects z Tasků 3–4
+- Produces:
+  ```ts
+  // repositories.ts
+  export interface VarietyRepository {
+    findAllActive(): Promise<Variety[]>
+    findAll(): Promise<Variety[]>
+    findById(id: number): Promise<Variety | null>
+    lockForUpdate(ids: number[]): Promise<Variety[]>   // jen uvnitř transakce; řadí podle id
+    save(variety: Variety): Promise<Variety>
+    createNew(input: NewVarietyInput): Promise<Variety>
+    deactivate(id: number): Promise<void>
+  }
+  export interface NewVarietyInput {
+    slug: string; name: string; tag: string; description: string
+    color: HexColor; pricePerKg: Money; stock: Kilograms; capacity: Kilograms
+  }
+
+  export interface NewOrderInput {
+    customer: OrderCustomer; items: OrderItem[]
+    delivery: DeliveryMethod; payment: PaymentMethod
+    subtotal: Money; deliveryFee: Money; total: Money
+    userId: number | null; publicToken: string; createdAt: Date
+  }
+  export interface OrderRepository {
+    create(input: NewOrderInput): Promise<Order>       // přidělí id, dopočte a uloží code
+    findByPublicToken(token: string): Promise<Order | null>
+    findById(id: number): Promise<Order | null>
+    listRecent(limit: number): Promise<Order[]>
+    countByStatus(status: OrderStatus): Promise<number>
+    updateStatus(id: number, status: OrderStatus): Promise<Order>
+    reservedKgSince(since: Date): Promise<Kilograms>
+    revenueSince(since: Date): Promise<Money>
+  }
+
+  export interface NewNewsPostInput {
+    title: string; body: string; tag: NewsTag
+    imageUrl: string | null; publishedAt: Date; authorId: number | null
+  }
+  export interface NewsRepository {
+    listPublished(limit: number): Promise<NewsPost[]>
+    create(input: NewNewsPostInput): Promise<NewsPost>
+    delete(id: number): Promise<void>
+  }
+
+  export interface NewUserInput { email: EmailAddress; name: string; passwordHash: string; role: UserRole }
+  export interface UserRepository {
+    findByEmail(email: EmailAddress): Promise<User | null>
+    findById(id: number): Promise<User | null>
+    create(input: NewUserInput): Promise<User>
+  }
+
+  export interface FieldRepository { listAll(): Promise<Field[]> }
+  export interface HarvestRepository { listRecent(days: number): Promise<HarvestEntry[]> }
+  export interface StorageReadingRepository { latest(): Promise<StorageReading | null> }
+
+  export interface RepositoryBundle {
+    varieties: VarietyRepository
+    orders: OrderRepository
+    news: NewsRepository
+    users: UserRepository
+    fields: FieldRepository
+    harvest: HarvestRepository
+    storage: StorageReadingRepository
+  }
+
+  // unit-of-work.ts
+  export interface UnitOfWork {
+    readonly repos: RepositoryBundle                    // mimo transakci
+    runInTransaction<T>(work: (repos: RepositoryBundle) => Promise<T>): Promise<T>
+  }
+
+  // services.ts
+  export interface MailMessage { to: string; subject: string; text: string }
+  export interface Mailer { send(message: MailMessage): Promise<void> }
+  export interface PasswordHasher { hash(plain: string): Promise<string>; verify(plain: string, hash: string): Promise<boolean> }
+  export interface SessionPayload { userId: number; role: UserRole; name: string }
+  export interface TokenService { sign(payload: SessionPayload): Promise<string>; verify(token: string): Promise<SessionPayload | null> }
+  export interface Clock { now(): Date }
+  export interface TokenGenerator { publicToken(): string }   // 24 náhodných bajtů base64url
+  export interface Logger { info(msg: string, meta?: Record<string, unknown>): void; warn(...): void; error(...): void }
+  ```
+
+- [ ] **Step 1: Napsat padající test pro formátování**
+
+`tests/unit/shared/format.test.ts`:
+```ts
+import { describe, expect, it } from 'vitest'
+import { formatCzk, formatKg, formatDateCs } from '@/shared/format'
+import { Kilograms } from '@/domain/value-objects/kilograms'
+import { Money } from '@/domain/value-objects/money'
+
+describe('format', () => {
+  it('formátuje kilogramy bez zbytečné nuly', () => {
+    expect(formatKg(Kilograms.of(20))).toBe('20 kg')
+    expect(formatKg(Kilograms.of(7.5))).toBe('7,5 kg')
+  })
+
+  it('formátuje koruny se zaokrouhlením a mezerou tisíců', () => {
+    expect(formatCzk(Money.fromCzk(182.5))).toBe('183 Kč')
+    expect(formatCzk(Money.fromCzk(6480))).toBe('6 480 Kč')
+  })
+
+  it('formátuje datum česky', () => {
+    expect(formatDateCs(new Date('2026-09-09T12:00:00Z'))).toBe('9. září 2026')
+  })
+})
+```
+
+Pozn.: `Intl.NumberFormat('cs-CZ')` používá úzkou nedělitelnou mezeru (U+00A0). Test na
+`'6 480 Kč'` musí obsahovat přesně ten znak — v implementaci proto oddělovač normalizuj
+na obyčejnou nedělitelnou mezeru ` ` a v testu ji zapiš jako `'6 480 Kč'`.
+
+- [ ] **Step 2: Spustit test, ověřit pád**
+
+Run: `npx vitest run tests/unit/shared`
+Expected: FAIL
+
+- [ ] **Step 3: Implementovat `shared/format.ts`, `shared/logger.ts`, `shared/result.ts`**
+
+```ts
+// result.ts — hranice use-case → server action → UI
+export type Result<T, E = string> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: E; readonly code?: string }
+export const ok = <T>(value: T): Result<T, never> => ({ ok: true, value })
+export const err = <E>(error: E, code?: string): Result<never, E> =>
+  code === undefined ? { ok: false, error } : { ok: false, error, code }
+```
+
+- [ ] **Step 4: Implementovat porty** — jen `interface` a `type`, žádná logika.
+
+- [ ] **Step 5: Spustit testy a typecheck**
+
+Run: `npx vitest run tests/unit && npm run typecheck`
+Expected: PASS
+
+- [ ] **Step 6: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(domain): porty repozitaru a sluzeb, sdilene utility"
+git push
+```
+
+---
+
+### Task 6: Prisma infrastruktura — klient, mappery, repozitáře, transakce
+
+**Files:**
+- Create: `src/infrastructure/persistence/prisma/client.ts`, `mappers.ts`, `repositories.ts`, `unit-of-work.ts`
+- Modify: `src/app/api/health/route.ts` — přidat kontrolu databáze
+- Test: `tests/integration/repositories.test.ts`, `tests/integration/helpers/db.ts`
+
+**Interfaces:**
+- Consumes: porty z Tasku 5, Prisma klient z Tasku 2
+- Produces:
+  - `prisma: PrismaClient` (singleton) z `client.ts`
+  - `createRepositories(client: PrismaClient | Prisma.TransactionClient): RepositoryBundle`
+  - `class PrismaUnitOfWork implements UnitOfWork`
+  - mappery `toVariety`, `toOrder`, `toNewsPost`, `toField`, `toHarvestEntry`, `toStorageReading`, `toUser`
+
+- [ ] **Step 1: Implementovat `client.ts` (singleton kvůli hot-reloadu)**
+
+```ts
+import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
+
+export const prisma: PrismaClient =
+  globalForPrisma.prisma ?? new PrismaClient({ log: ['warn', 'error'] })
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+```
+
+- [ ] **Step 2: Implementovat `unit-of-work.ts`**
+
+```ts
+import type { Prisma, PrismaClient } from '@prisma/client'
+import type { RepositoryBundle } from '@/domain/ports/repositories'
+import type { UnitOfWork } from '@/domain/ports/unit-of-work'
+import { createRepositories } from './repositories'
+
+export class PrismaUnitOfWork implements UnitOfWork {
+  readonly repos: RepositoryBundle
+
+  constructor(private readonly client: PrismaClient) {
+    this.repos = createRepositories(client)
+  }
+
+  async runInTransaction<T>(work: (repos: RepositoryBundle) => Promise<T>): Promise<T> {
+    return this.client.$transaction(
+      async (tx: Prisma.TransactionClient) => work(createRepositories(tx)),
+      { isolationLevel: 'ReadCommitted', timeout: 15_000 },
+    )
+  }
+}
+```
+
+`ReadCommitted` je vědomá volba: výchozí `RepeatableRead` v MySQL by u `SELECT … FOR UPDATE`
+vedl k tomu, že transakce po zámku čte starý snapshot z okamžiku svého začátku, a odečtení
+skladu by pak vycházelo z neaktuální hodnoty. `ReadCommitted` po získání zámku přečte
+aktuální řádek. To je nutná podmínka, aby race test v Tasku 12 prošel.
+
+- [ ] **Step 3: Implementovat `lockForUpdate`**
+
+Prisma nemá deklarativní `FOR UPDATE`; jde to jen přes raw dotaz. Zámek se drží do konce
+transakce, takže po `$queryRaw` stačí data načíst normálně.
+
+```ts
+async lockForUpdate(ids: number[]): Promise<Variety[]> {
+  if (ids.length === 0) return []
+  const ordered = [...new Set(ids)].sort((a, b) => a - b)   // stabilní pořadí → bez deadlocku
+  await this.client.$queryRaw`
+    SELECT id FROM varieties WHERE id IN (${Prisma.join(ordered)}) ORDER BY id FOR UPDATE
+  `
+  const rows = await this.client.variety.findMany({ where: { id: { in: ordered } } })
+  return rows.map(toVariety)
+}
+```
+
+- [ ] **Step 4: Implementovat `OrderRepository.create` s bezpečným kódem**
+
+```ts
+async create(input: NewOrderInput): Promise<Order> {
+  const created = await this.client.order.create({
+    data: {
+      code: `tmp-${input.publicToken.slice(0, 10)}`,   // dočasně unikátní, přepíše se níž
+      publicToken: input.publicToken,
+      customerName: input.customer.name,
+      customerEmail: input.customer.email.value,
+      customerPhone: input.customer.phone,
+      note: input.customer.note,
+      deliveryMethod: input.delivery,
+      paymentMethod: input.payment,
+      subtotalCzk: new Prisma.Decimal(input.subtotal.czk),
+      deliveryFeeCzk: new Prisma.Decimal(input.deliveryFee.czk),
+      totalCzk: new Prisma.Decimal(input.total.czk),
+      userId: input.userId,
+      createdAt: input.createdAt,
+      items: {
+        create: input.items.map((i) => ({
+          varietyId: i.varietyId,
+          varietyName: i.varietyName,
+          unitPriceCzk: new Prisma.Decimal(i.unitPrice.czk),
+          quantityKg: new Prisma.Decimal(i.quantity.value),
+          lineTotalCzk: new Prisma.Decimal(i.lineTotal.czk),
+        })),
+      },
+    },
+    include: { items: true },
+  })
+
+  const withCode = await this.client.order.update({
+    where: { id: created.id },
+    data: { code: `#${ORDER_CODE_OFFSET + created.id}` },   // ORDER_CODE_OFFSET = 2609
+    include: { items: true },
+  })
+  return toOrder(withCode)
+}
+```
+
+Kód se odvozuje z auto-increment `id`, takže je unikátní bez ohledu na souběh. `COUNT(*)+1`
+by dvěma souběžným transakcím vrátil stejné číslo.
+
+- [ ] **Step 5: Test helper pro integrační testy**
+
+`tests/integration/helpers/db.ts`:
+```ts
+import { PrismaClient } from '@prisma/client'
+
+export const testPrisma = new PrismaClient()
+
+export async function resetDatabase(): Promise<void> {
+  await testPrisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0')
+  for (const table of [
+    'order_items', 'orders', 'news_posts', 'varieties',
+    'fields', 'harvest_entries', 'storage_readings', 'users',
+  ]) {
+    await testPrisma.$executeRawUnsafe(`TRUNCATE TABLE \`${table}\``)
+  }
+  await testPrisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1')
+}
+```
+
+`TRUNCATE` resetuje i auto-increment, takže kódy objednávek začínají v každém testu od `#2610`.
+
+- [ ] **Step 6: Napsat integrační test mapování**
+
+`tests/integration/repositories.test.ts` — pro každý repozitář zapiš entitu, načti ji zpět
+a porovnej hodnoty (zejména `Decimal` → `Money`/`Kilograms` tam a zpět, `#2610` kód,
+`publicToken` unikátní, `RESTRICT` brání smazání odrůdy s objednávkou).
+
+- [ ] **Step 7: Spustit integrační testy**
+
+Run: `npm run test:integration`
+Expected: PASS (vyžaduje běžící MySQL z Tasku 2)
+
+- [ ] **Step 8: Rozšířit `/api/health` o kontrolu databáze**
+
+```ts
+import { prisma } from '@/infrastructure/persistence/prisma/client'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    return Response.json({ status: 'ok', database: 'up' })
+  } catch {
+    return Response.json({ status: 'degraded', database: 'down' }, { status: 503 })
+  }
+}
+```
+
+Chybová větev vědomě nevrací detail výjimky — hlášky MySQL prozrazují hostname a jméno
+uživatele a health endpoint je veřejný.
+
+- [ ] **Step 9: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(infra): Prisma repozitare, transakcni jednotka prace a health check DB"
+git push
+```
+
+---
+
+### Task 7: Seed databáze daty z prototypu
+
+**Files:**
+- Create: `prisma/seed.ts`
+- Test: `tests/integration/seed.test.ts`
+
+**Interfaces:**
+- Consumes: Prisma klient (Task 2), `bcryptjs`
+- Produces: `seed(prisma: PrismaClient, farmerPassword: string): Promise<void>` — idempotentní přes `upsert` podle přirozených klíčů (`varieties.slug`, `users.email`, `harvest_entries.date`)
+
+- [ ] **Step 1: Napsat seed**
+
+Data 1:1 z prototypu:
+- **Odrůdy**: `bernie` (Bernie, „lahůdková, salátová, varný typ A“, `#c98a2b`, 22 Kč, 148/160 kg), `marabel` (Marabel, „polopozdní, varný typ AB“, `#8a9a3f`, 17 Kč, 132/170), `red-anna` (Red Anna, „červená slupka, varný typ B“, `#a9642e`, 19 Kč, 64/140), `agria` (Agria, „pozdní, varný typ B“, `#6f8f5a`, 16 Kč, 0/150). Popisy z prototypu doslova.
+- **Novinky**: 3 kusy s daty 9. 9., 5. 9. a 1. 9. 2026, tagy `HARVEST`, `STORAGE`, `FIELD`.
+- **Pole**: 5 řádků (Záhon za stodolou / u lesa / Nad potokem / Dolní díl / Kamenec) se stavy `HARVESTED`, `HARVESTED`, `HARVESTING`, `GROWING`, `GROWING`; poslední dva mají `isEstimate: true`.
+- **Historie výkopu**: 14 dní od 27. 8. do 9. 9. 2026 s dvojicemi `dug`/`stock` z prototypu.
+- **Skladové čidlo**: jeden záznam 6,0 °C / 92 %.
+- **Objednávky**: 3 historické (`#2607`–`#2609`) se stavy `COLLECTED`, `READY`, `NEW`.
+- **Farmář**: `farma@silentagro.cz`, jméno „Farmář Milan“, role `FARMER`.
+
+```ts
+const password = process.env.SEED_FARMER_PASSWORD
+if (!password || password.length < 8) {
+  throw new Error(
+    'SEED_FARMER_PASSWORD musí být nastavené a mít alespoň 8 znaků. ' +
+    'Do repozitáře se žádné výchozí heslo nezapisuje.',
+  )
+}
+```
+
+Objednávky se sázejí přímo s `code` `#2607`–`#2609` a auto-increment se posune tak, aby
+první objednávka z aplikace dostala `#2610` — po vložení tří řádků má poslední `id = 3`
+a `ORDER_CODE_OFFSET + 4 = 2613`. Aby kódy navazovaly, seed vloží objednávky s explicitními
+`id` 1–3 a kódy se dopočtou stejným vzorcem `#${2609 + id}`. Tím sedí seed i běh aplikace
+na jednom pravidle a nikde není druhá definice.
+
+- [ ] **Step 2: Napsat integrační test idempotence**
+
+```ts
+it('dvojí spuštění seedu nevytvoří duplicity', async () => {
+  await seed(testPrisma, 'testovaci-heslo')
+  await seed(testPrisma, 'testovaci-heslo')
+  expect(await testPrisma.variety.count()).toBe(4)
+  expect(await testPrisma.user.count()).toBe(1)
+  expect(await testPrisma.harvestEntry.count()).toBe(14)
+})
+
+it('bez SEED_FARMER_PASSWORD skončí chybou', async () => {
+  await expect(seed(testPrisma, '')).rejects.toThrow(/SEED_FARMER_PASSWORD/)
+})
+```
+
+- [ ] **Step 3: Spustit seed a ověřit v databázi**
+
+Run: `SEED_FARMER_PASSWORD=brambory123 npm run db:seed && npm run test:integration`
+Expected: PASS
+
+- [ ] **Step 4: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(db): idempotentni seed daty z prototypu"
+git push
+```
+
+---
+
+### Task 8: Autentizační infrastruktura
+
+**Files:**
+- Create: `src/infrastructure/auth/bcrypt-password-hasher.ts`, `jose-token-service.ts`, `session.ts`, `edge-session.ts`
+- Test: `tests/unit/auth/jose-token-service.test.ts`, `tests/unit/auth/bcrypt-password-hasher.test.ts`
+
+**Interfaces:**
+- Consumes: `PasswordHasher`, `TokenService`, `SessionPayload` z Tasku 5; `env` z Tasku 1
+- Produces:
+  ```ts
+  export class BcryptPasswordHasher implements PasswordHasher   // cost 12
+  export class JoseTokenService implements TokenService {
+    constructor(secret: string, ttlSeconds = 7 * 24 * 3600)
+  }
+  // session.ts — server-only (Node runtime)
+  export const SESSION_COOKIE = 'silentagro_session'
+  export async function readSession(): Promise<SessionPayload | null>
+  export async function writeSession(payload: SessionPayload): Promise<void>
+  export async function clearSession(): Promise<void>
+  export async function requireFarmer(): Promise<SessionPayload>   // ForbiddenError, jinak payload
+  // edge-session.ts — Edge-safe, jen ověření
+  export async function verifySessionToken(token: string, secret: string): Promise<SessionPayload | null>
+  ```
+
+- [ ] **Step 1: Napsat padající test pro tokeny**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { JoseTokenService } from '@/infrastructure/auth/jose-token-service'
+import { UserRole } from '@/domain/enums'
+
+const secret = 'x'.repeat(32)
+const payload = { userId: 7, role: UserRole.FARMER, name: 'Farmář Milan' }
+
+describe('JoseTokenService', () => {
+  it('podepíše a ověří token', async () => {
+    const svc = new JoseTokenService(secret)
+    expect(await svc.verify(await svc.sign(payload))).toEqual(payload)
+  })
+
+  it('odmítne token podepsaný jiným tajemstvím', async () => {
+    const token = await new JoseTokenService(secret).sign(payload)
+    expect(await new JoseTokenService('y'.repeat(32)).verify(token)).toBeNull()
+  })
+
+  it('odmítne prošlý token', async () => {
+    const svc = new JoseTokenService(secret, -1)
+    expect(await svc.verify(await svc.sign(payload))).toBeNull()
+  })
+
+  it('odmítne nesmysl místo tokenu', async () => {
+    expect(await new JoseTokenService(secret).verify('rozbite')).toBeNull()
+  })
+
+  it('odmítne token s algoritmem none', async () => {
+    const forged = `${btoa('{"alg":"none"}')}.${btoa(JSON.stringify(payload))}.`
+    expect(await new JoseTokenService(secret).verify(forged)).toBeNull()
+  })
+})
+```
+
+Poslední test je podstatný: `jwtVerify` se volá s `{ algorithms: ['HS256'] }`, jinak by
+knihovna přijala token, který si algoritmus určí sám.
+
+- [ ] **Step 2: Spustit test, ověřit pád**
+
+Run: `npx vitest run tests/unit/auth`
+Expected: FAIL
+
+- [ ] **Step 3: Implementovat `JoseTokenService`**
+
+```ts
+import { SignJWT, jwtVerify } from 'jose'
+import type { SessionPayload, TokenService } from '@/domain/ports/services'
+
+export class JoseTokenService implements TokenService {
+  private readonly key: Uint8Array
+  constructor(secret: string, private readonly ttlSeconds = 7 * 24 * 3600) {
+    this.key = new TextEncoder().encode(secret)
+  }
+
+  async sign(payload: SessionPayload): Promise<string> {
+    const now = Math.floor(Date.now() / 1000)
+    return new SignJWT({ role: payload.role, name: payload.name })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(String(payload.userId))
+      .setIssuedAt(now)
+      .setExpirationTime(now + this.ttlSeconds)
+      .sign(this.key)
+  }
+
+  async verify(token: string): Promise<SessionPayload | null> {
+    try {
+      const { payload } = await jwtVerify(token, this.key, { algorithms: ['HS256'] })
+      const userId = Number(payload.sub)
+      if (!Number.isInteger(userId)) return null
+      return { userId, role: payload.role as UserRole, name: String(payload.name ?? '') }
+    } catch {
+      return null
+    }
+  }
+}
+```
+
+- [ ] **Step 4: Implementovat cookie helpery**
+
+```ts
+export const SESSION_COOKIE = 'silentagro_session'
+
+export async function writeSession(payload: SessionPayload): Promise<void> {
+  const token = await tokenService().sign(payload)
+  ;(await cookies()).set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 7 * 24 * 3600,
+  })
+}
+```
+
+- [ ] **Step 5: Test hashování hesla**
+
+```ts
+it('ověří správné heslo a odmítne špatné', async () => {
+  const h = new BcryptPasswordHasher()
+  const hash = await h.hash('brambory')
+  expect(hash).not.toContain('brambory')
+  expect(await h.verify('brambory', hash)).toBe(true)
+  expect(await h.verify('mrkev', hash)).toBe(false)
+})
+```
+
+- [ ] **Step 6: Spustit testy**
+
+Run: `npx vitest run tests/unit/auth`
+Expected: PASS
+
+- [ ] **Step 7: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(auth): hashovani hesel bcrypt a JWT session pres jose"
+git push
+```
+
+---
+
+### Task 9: Mailová infrastruktura
+
+**Files:**
+- Create: `src/infrastructure/mail/nodemailer-mailer.ts`, `src/infrastructure/mail/templates.ts`
+- Test: `tests/unit/mail/templates.test.ts`
+
+**Interfaces:**
+- Consumes: `Mailer`, `MailMessage` z Tasku 5; `Order` z Tasku 4; `env` z Tasku 1
+- Produces:
+  ```ts
+  export class NodemailerMailer implements Mailer {
+    constructor(config: { host: string; port: number; secure: boolean; user?: string; password?: string; from: string })
+  }
+  export function renderCustomerConfirmation(order: Order, publicUrl: string): MailMessage
+  export function renderFarmerNotification(order: Order, farmerEmail: string, adminUrl: string): MailMessage
+  ```
+
+- [ ] **Step 1: Napsat padající test šablon**
+
+```ts
+it('e-mail zákazníkovi obsahuje kód, položky, částku a odkaz', () => {
+  const mail = renderCustomerConfirmation(sampleOrder, 'https://silentagro.cz/rezervace/abc123')
+  expect(mail.to).toBe('jan@email.cz')
+  expect(mail.subject).toBe('Potvrzení rezervace #2610 — SilentAgro')
+  expect(mail.text).toContain('Bernie 2,5 kg')
+  expect(mail.text).toContain('55 Kč')
+  expect(mail.text).toContain('https://silentagro.cz/rezervace/abc123')
+  expect(mail.text).toContain('Zboží držíme 5 dní')
+})
+
+it('e-mail farmáři jde na adresu farmy a nese poznámku zákazníka', () => {
+  const mail = renderFarmerNotification(sampleOrder, 'farma@silentagro.cz', 'https://silentagro.cz/admin/objednavky')
+  expect(mail.to).toBe('farma@silentagro.cz')
+  expect(mail.subject).toBe('Nová rezervace #2610 (2,5 kg)')
+  expect(mail.text).toContain('jan@email.cz')
+  expect(mail.text).toContain('Přijedu v sobotu')
+})
+
+it('prázdná poznámka se vypíše jako pomlčka', () => {
+  const mail = renderFarmerNotification(orderWithoutNote, 'farma@silentagro.cz', '#')
+  expect(mail.text).toContain('Poznámka: —')
+})
+```
+
+Texty vycházejí doslova z prototypu (`emails` v `renderVals`), jen doplněné o odkaz
+na potvrzení, který prototyp neměl.
+
+- [ ] **Step 2: Spustit, ověřit pád; implementovat šablony; spustit znovu**
+
+Run: `npx vitest run tests/unit/mail`
+Expected: nejdřív FAIL, po implementaci PASS
+
+- [ ] **Step 3: Implementovat `NodemailerMailer`**
+
+Transport se vytváří jednou v konstruktoru. Autentizace se předá jen tehdy, když je
+`user` neprázdný — Mailpit ve vývoji žádnou nechce a prázdné `auth` by spojení shodilo.
+
+```ts
+this.transport = nodemailer.createTransport({
+  host: config.host,
+  port: config.port,
+  secure: config.secure,
+  ...(config.user ? { auth: { user: config.user, pass: config.password ?? '' } } : {}),
+})
+```
+
+- [ ] **Step 4: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(mail): SMTP odesilatel a sablony potvrzeni objednavky"
+git push
+```
+
+---
+
+### Task 10: Composition root
+
+**Files:**
+- Create: `src/infrastructure/di/container.ts`
+- Create: `src/infrastructure/rate-limit/token-bucket.ts`
+- Test: `tests/unit/rate-limit/token-bucket.test.ts`
+
+**Interfaces:**
+- Consumes: vše z Tasků 5–9
+- Produces:
+  ```ts
+  export interface Container {
+    uow: UnitOfWork
+    mailer: Mailer
+    hasher: PasswordHasher
+    tokens: TokenService
+    clock: Clock
+    tokenGenerator: TokenGenerator
+    logger: Logger
+    config: { farmerEmail: string; publicBaseUrl: string }
+  }
+  export function getContainer(): Container       // líný singleton
+  export class TokenBucket {
+    constructor(capacity: number, refillPerSecond: number, clock: Clock)
+    tryConsume(key: string, cost?: number): boolean
+  }
+  export const loginLimiter: TokenBucket          // 5 pokusů / 15 min na IP
+  export const orderLimiter: TokenBucket          // 10 objednávek / hod na IP
+  ```
+
+- [ ] **Step 1: Napsat padající test token bucketu**
+
+```ts
+it('propustí do kapacity a pak odmítne', () => {
+  const clock = { now: () => new Date('2026-09-10T10:00:00Z') }
+  const bucket = new TokenBucket(3, 1 / 60, clock)
+  expect([1, 2, 3].map(() => bucket.tryConsume('1.2.3.4'))).toEqual([true, true, true])
+  expect(bucket.tryConsume('1.2.3.4')).toBe(false)
+})
+
+it('doplní tokeny s časem', () => {
+  let t = new Date('2026-09-10T10:00:00Z')
+  const bucket = new TokenBucket(1, 1 / 60, { now: () => t })
+  expect(bucket.tryConsume('a')).toBe(true)
+  expect(bucket.tryConsume('a')).toBe(false)
+  t = new Date('2026-09-10T10:01:00Z')
+  expect(bucket.tryConsume('a')).toBe(true)
+})
+
+it('drží klíče odděleně', () => {
+  const bucket = new TokenBucket(1, 0, { now: () => new Date('2026-09-10T10:00:00Z') })
+  expect(bucket.tryConsume('a')).toBe(true)
+  expect(bucket.tryConsume('b')).toBe(true)
+})
+```
+
+`TokenBucket` bere `Clock` jako závislost právě proto, aby šel takhle testovat bez čekání.
+
+- [ ] **Step 2: Implementovat bucket a kontejner; spustit testy**
+
+Kontejner drží stav v `globalThis`, aby hot-reload ve vývoji nezakládal nové SMTP spojení
+při každé změně souboru. Mapa v `TokenBucket` se čistí líně — při každém `tryConsume`
+se zahodí záznamy starší než `capacity / refillPerSecond`, jinak by rostla bez omezení.
+
+Run: `npx vitest run tests/unit/rate-limit`
+Expected: PASS
+
+- [ ] **Step 3: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(infra): composition root a token bucket pro rate limit"
+git push
+```
+
+---
+
+### Task 11: Čtecí use-cases
+
+**Files:**
+- Create: `src/application/dto.ts`
+- Create: `src/application/use-cases/list-varieties.ts`, `get-stock-overview.ts`, `list-news.ts`, `get-order-by-token.ts`
+- Test: `tests/unit/application/get-stock-overview.test.ts`, `tests/unit/application/fakes.ts`
+
+**Interfaces:**
+- Consumes: porty (Task 5), entity (Task 4)
+- Produces:
+  ```ts
+  export interface VarietyView {
+    id: number; slug: string; name: string; tag: string; description: string
+    colorHex: string; priceCzk: number; priceLabel: string
+    stockKg: number; stockLabel: string; fillPercent: number
+    available: boolean
+  }
+  export interface BinView { name: string; colorHex: string; percent: number; percentLabel: string; kgLabel: string }
+  export interface KpiView { label: string; value: string; delta: string; tone: 'green' | 'muted' }
+  export interface HarvestPointView { dateLabel: string; dugKg: number; stockKg: number }
+  export interface FieldView { name: string; varietyName: string; areaLabel: string; status: FieldStatus; statusLabel: string; yieldLabel: string }
+  export interface StockOverview {
+    totalKg: number; totalKgLabel: string
+    bins: BinView[]; kpis: KpiView[]
+    harvest: HarvestPointView[]; fields: FieldView[]
+    updatedAtLabel: string
+  }
+  export interface NewsView { id: number; title: string; body: string; tag: NewsTag; tagLabel: string; dateLabel: string; imageUrl: string | null }
+  export interface OrderView {
+    code: string; totalKgLabel: string; totalLabel: string; customerEmail: string
+    itemsLabel: string; deliveryLabel: string; paymentLabel: string
+    customerMail: { kind: string; to: string; subject: string; body: string }
+    farmerMail: { kind: string; to: string; subject: string; body: string }
+  }
+
+  export class ListVarieties { constructor(deps: { uow: UnitOfWork }); execute(): Promise<VarietyView[]> }
+  export class GetStockOverview { constructor(deps: { uow: UnitOfWork; clock: Clock }); execute(): Promise<StockOverview> }
+  export class ListNews { constructor(deps: { uow: UnitOfWork }); execute(limit?: number): Promise<NewsView[]> }
+  export class GetOrderByToken { constructor(deps: { uow: UnitOfWork; config: { farmerEmail: string; publicBaseUrl: string } }); execute(token: string): Promise<OrderView> }
+  ```
+
+Use-case vrací **view model**, ne entitu. Důvod: stránky jsou server komponenty a entita
+s metodami by se nedala poslat přes hranici serializace do klientských komponent.
+Formátování (`priceLabel`, `stockLabel`) proto probíhá na serveru, jednou, ve `shared/format.ts`.
+
+- [ ] **Step 1: Napsat in-memory fakes**
+
+`tests/unit/application/fakes.ts` — `InMemoryVarietyRepository`, `InMemoryOrderRepository`,
+`InMemoryNewsRepository`, `InMemoryUserRepository`, `InMemoryFieldRepository`,
+`InMemoryHarvestRepository`, `InMemoryStorageReadingRepository`, `FakeUnitOfWork`
+(`runInTransaction` prostě zavolá `work(this.repos)`), `FakeMailer` (sbírá zprávy do pole),
+`FakeClock` (fixní datum), `FakeTokenGenerator` (vrací předvídatelné tokeny `token-1`, `token-2`, …).
+
+`FakeUnitOfWork` **nesmí** simulovat rollback — testy, které rollback ověřují, patří
+do integrace (Task 12, krok s race testem). Unit testy ověřují rozhodovací logiku.
+
+- [ ] **Step 2: Napsat padající test `GetStockOverview`**
+
+```ts
+it('sečte sklad napříč odrůdami a složí zásobníky', async () => {
+  const uow = fakeUow({ varieties: [bernie(148, 160), marabel(132, 170), agria(0, 150)] })
+  const view = await new GetStockOverview({ uow, clock }).execute()
+  expect(view.totalKg).toBe(280)
+  expect(view.totalKgLabel).toBe('280')
+  expect(view.bins.map((b) => b.percent)).toEqual([87, 78, 0])
+})
+
+it('při nulové kapacitě nevydělí nulou', async () => {
+  const uow = fakeUow({ varieties: [bernie(0, 0)] })
+  const view = await new GetStockOverview({ uow, clock }).execute()
+  expect(view.bins[0]?.percent).toBe(0)
+})
+```
+
+Procenta zásobníků se počítají proti **největší kapacitě mezi odrůdami**, ne proti vlastní
+kapacitě — přesně jako prototyp (`maxCap`), aby byly sloupce vzájemně porovnatelné.
+V `VarietyView.fillPercent` (burza) se naopak počítá proti **vlastní** kapacitě, protože
+tam jde o naplněnost jedné odrůdy. Dvě různá procenta, dvě různé otázky — nezaměňovat.
+
+- [ ] **Step 3: Spustit, ověřit pád, implementovat, spustit znovu**
+
+Run: `npx vitest run tests/unit/application`
+Expected: nejdřív FAIL, po implementaci PASS
+
+- [ ] **Step 4: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(app): ctecі use-cases pro burzu, sklad, novinky a potvrzeni"
+git push
+```
+
+---
+
+### Task 12: ReserveOrder — kritický tok
+
+**Files:**
+- Create: `src/application/use-cases/reserve-order.ts`
+- Test: `tests/unit/application/reserve-order.test.ts`, `tests/integration/reserve-order.test.ts`
+
+**Interfaces:**
+- Consumes: `UnitOfWork`, `Mailer`, `Clock`, `TokenGenerator`, `Logger` (Task 5); `Order`, `OrderItem`, `Variety` (Task 4); šablony (Task 9)
+- Produces:
+  ```ts
+  export interface ReserveOrderInput {
+    customer: { name: string; email: string; phone: string; note: string }
+    delivery: DeliveryMethod
+    payment: PaymentMethod
+    items: ReadonlyArray<{ varietyId: number; quantityKg: number }>
+    userId: number | null
+  }
+  export interface ReserveOrderResult { code: string; publicToken: string }
+  export class ReserveOrder {
+    constructor(deps: {
+      uow: UnitOfWork; mailer: Mailer; clock: Clock
+      tokenGenerator: TokenGenerator; logger: Logger
+      config: { farmerEmail: string; publicBaseUrl: string }
+    })
+    execute(input: ReserveOrderInput): Promise<ReserveOrderResult>
+  }
+  ```
+
+- [ ] **Step 1: Napsat padající unit testy**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { ReserveOrder } from '@/application/use-cases/reserve-order'
+import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
+import { InsufficientStockError, ValidationError } from '@/domain/errors'
+
+const customer = { name: 'Jan Novák', email: 'jan@email.cz', phone: '+420777123456', note: '' }
+
+describe('ReserveOrder', () => {
+  it('odečte sklad, uloží objednávku a odešle dva e-maily', async () => {
+    const ctx = makeContext({ varieties: [bernie(10, 160, 22)] })
+    const result = await ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.QR_CODE,
+      items: [{ varietyId: 1, quantityKg: 2.5 }], userId: null,
+    })
+
+    expect(result.code).toBe('#2610')
+    expect(ctx.varieties.get(1)?.stock.value).toBe(7.5)
+    expect(ctx.mailer.sent).toHaveLength(2)
+    expect(ctx.mailer.sent[0]?.to).toBe('jan@email.cz')
+    expect(ctx.mailer.sent[1]?.to).toBe('farma@silentagro.cz')
+  })
+
+  it('odmítne objednávku nad stav skladu a sklad nezmění', async () => {
+    const ctx = makeContext({ varieties: [bernie(2, 160, 22)] })
+    await expect(ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+      items: [{ varietyId: 1, quantityKg: 2.5 }], userId: null,
+    })).rejects.toThrow(InsufficientStockError)
+    expect(ctx.varieties.get(1)?.stock.value).toBe(2)
+    expect(ctx.mailer.sent).toHaveLength(0)
+  })
+
+  it('ignoruje cenu poslanou klientem a použije cenu ze skladu', async () => {
+    const ctx = makeContext({ varieties: [bernie(10, 160, 22)] })
+    // vstup vůbec neobsahuje cenu — kontrolujeme, že výsledek sedí na 22 Kč/kg
+    await ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+      items: [{ varietyId: 1, quantityKg: 2 }], userId: null,
+    })
+    expect(ctx.orders.last()?.total.czk).toBe(44)
+  })
+
+  it('účtuje rozvoz 60 Kč a nad 600 Kč zdarma', async () => {
+    const ctx = makeContext({ varieties: [bernie(100, 160, 22)] })
+    await ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.LOCAL_DELIVERY, payment: PaymentMethod.BANK_TRANSFER,
+      items: [{ varietyId: 1, quantityKg: 2 }], userId: null,
+    })
+    expect(ctx.orders.last()?.total.czk).toBe(104)
+
+    await ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.LOCAL_DELIVERY, payment: PaymentMethod.BANK_TRANSFER,
+      items: [{ varietyId: 1, quantityKg: 40 }], userId: null,
+    })
+    expect(ctx.orders.last()?.total.czk).toBe(880)
+  })
+
+  it('sloučí dva řádky se stejnou odrůdou', async () => {
+    const ctx = makeContext({ varieties: [bernie(10, 160, 22)] })
+    await ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+      items: [{ varietyId: 1, quantityKg: 1 }, { varietyId: 1, quantityKg: 1.5 }], userId: null,
+    })
+    expect(ctx.orders.last()?.items).toHaveLength(1)
+    expect(ctx.varieties.get(1)?.stock.value).toBe(7.5)
+  })
+
+  it('odmítne prázdný košík', async () => {
+    const ctx = makeContext({ varieties: [bernie(10, 160, 22)] })
+    await expect(ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+      items: [], userId: null,
+    })).rejects.toThrow(ValidationError)
+  })
+
+  it('odmítne neaktivní odrůdu', async () => {
+    const ctx = makeContext({ varieties: [inactive(1, 10)] })
+    await expect(ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+      items: [{ varietyId: 1, quantityKg: 1 }], userId: null,
+    })).rejects.toThrow(/není v nabídce/)
+  })
+
+  it('selhání odesílání e-mailu objednávku nezruší', async () => {
+    const ctx = makeContext({ varieties: [bernie(10, 160, 22)], mailerFails: true })
+    const result = await ctx.useCase.execute({
+      customer, delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+      items: [{ varietyId: 1, quantityKg: 1 }], userId: null,
+    })
+    expect(result.code).toBe('#2610')
+    expect(ctx.varieties.get(1)?.stock.value).toBe(9)
+    expect(ctx.logger.errors).toHaveLength(1)
+  })
+})
+```
+
+- [ ] **Step 2: Spustit, ověřit pád**
+
+Run: `npx vitest run tests/unit/application/reserve-order.test.ts`
+Expected: FAIL — modul neexistuje
+
+- [ ] **Step 3: Implementovat `ReserveOrder`**
+
+```ts
+export class ReserveOrder {
+  constructor(private readonly deps: ReserveOrderDeps) {}
+
+  async execute(input: ReserveOrderInput): Promise<ReserveOrderResult> {
+    const customer = {
+      name: input.customer.name.trim(),
+      email: EmailAddress.of(input.customer.email),
+      phone: input.customer.phone.trim(),
+      note: input.customer.note.trim(),
+    }
+    if (customer.name.length === 0) throw new ValidationError('Vyplňte prosím jméno')
+
+    // sloučení řádků se stejnou odrůdou; klient může poslat duplicity
+    const merged = new Map<number, Kilograms>()
+    for (const line of input.items) {
+      const qty = Kilograms.of(line.quantityKg)
+      if (qty.isZero()) continue
+      merged.set(line.varietyId, (merged.get(line.varietyId) ?? Kilograms.zero()).plus(qty))
+    }
+    if (merged.size === 0) throw new ValidationError('Košík je prázdný')
+
+    const order = await this.deps.uow.runInTransaction(async (repos) => {
+      const ids = [...merged.keys()]
+      const locked = await repos.varieties.lockForUpdate(ids)
+      const byId = new Map(locked.map((v) => [v.id, v]))
+
+      const items: OrderItem[] = []
+      for (const [varietyId, quantity] of merged) {
+        const variety = byId.get(varietyId)
+        if (!variety || !variety.isActive) {
+          throw new ValidationError('Jedna z odrůd už není v nabídce')
+        }
+        const withdrawn = variety.withdraw(quantity)   // vyhodí InsufficientStockError
+        await repos.varieties.save(withdrawn)
+        items.push(OrderItem.create({
+          varietyId: variety.id,
+          varietyName: variety.name,
+          unitPrice: variety.pricePerKg,               // cena ze serveru, ne z klienta
+          quantity,
+        }))
+      }
+
+      const subtotal = items.reduce((acc, i) => acc.plus(i.lineTotal), Money.zero())
+      const deliveryFee = Order.deliveryFeeFor(input.delivery, subtotal)
+
+      return repos.orders.create({
+        customer, items,
+        delivery: input.delivery, payment: input.payment,
+        subtotal, deliveryFee, total: subtotal.plus(deliveryFee),
+        userId: input.userId,
+        publicToken: this.deps.tokenGenerator.publicToken(),
+        createdAt: this.deps.clock.now(),
+      })
+    })
+
+    // až po commitu; mail je notifikace, sklad je pravda
+    await this.notify(order)
+
+    return { code: order.code, publicToken: order.publicToken }
+  }
+
+  private async notify(order: Order): Promise<void> {
+    const { publicBaseUrl, farmerEmail } = this.deps.config
+    try {
+      await this.deps.mailer.send(
+        renderCustomerConfirmation(order, `${publicBaseUrl}/rezervace/${order.publicToken}`),
+      )
+      await this.deps.mailer.send(
+        renderFarmerNotification(order, farmerEmail, `${publicBaseUrl}/admin/objednavky`),
+      )
+    } catch (error) {
+      this.deps.logger.error('Odeslání potvrzení selhalo, objednávka zůstává platná', {
+        orderCode: order.code,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+}
+```
+
+- [ ] **Step 4: Spustit unit testy**
+
+Run: `npx vitest run tests/unit/application/reserve-order.test.ts`
+Expected: PASS (8 testů)
+
+- [ ] **Step 5: Napsat integrační race test**
+
+`tests/integration/reserve-order.test.ts`:
+```ts
+it('dvě souběžné rezervace na poslední kilogram: uspěje právě jedna', async () => {
+  await resetDatabase()
+  await seedSingleVariety({ stockKg: 1, priceCzk: 20 })
+
+  const useCase = makeReserveOrder()   // proti reálné PrismaUnitOfWork
+  const attempt = () => useCase.execute({
+    customer: { name: 'Jan', email: 'jan@email.cz', phone: '', note: '' },
+    delivery: DeliveryMethod.PICKUP, payment: PaymentMethod.CASH,
+    items: [{ varietyId: 1, quantityKg: 1 }], userId: null,
+  })
+
+  const results = await Promise.allSettled([attempt(), attempt()])
+  const fulfilled = results.filter((r) => r.status === 'fulfilled')
+  const rejected = results.filter((r) => r.status === 'rejected')
+
+  expect(fulfilled).toHaveLength(1)
+  expect(rejected).toHaveLength(1)
+  expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(InsufficientStockError)
+
+  const variety = await testPrisma.variety.findUniqueOrThrow({ where: { id: 1 } })
+  expect(Number(variety.stockKg)).toBe(0)
+  expect(await testPrisma.order.count()).toBe(1)
+})
+
+it('objednávky dostávají navazující kódy', async () => {
+  await resetDatabase()
+  await seedSingleVariety({ stockKg: 100, priceCzk: 20 })
+  const useCase = makeReserveOrder()
+  const first = await useCase.execute(order1)
+  const second = await useCase.execute(order2)
+  expect([first.code, second.code]).toEqual(['#2610', '#2611'])
+})
+
+it('neúspěšná objednávka nezanechá řádek ani neodečte sklad', async () => {
+  await resetDatabase()
+  await seedSingleVariety({ stockKg: 1, priceCzk: 20 })
+  const useCase = makeReserveOrder()
+  await expect(useCase.execute({ ...base, items: [{ varietyId: 1, quantityKg: 5 }] }))
+    .rejects.toThrow(InsufficientStockError)
+  expect(await testPrisma.order.count()).toBe(0)
+  expect(Number((await testPrisma.variety.findUniqueOrThrow({ where: { id: 1 } })).stockKg)).toBe(1)
+})
+```
+
+Tenhle test je hlavní důvod, proč `UnitOfWork` existuje. Kdyby se sklad odečítal mimo
+transakci nebo bez `FOR UPDATE`, obě rezervace projdou a sklad spadne do mínusu.
+
+- [ ] **Step 6: Spustit integrační testy**
+
+Run: `npm run test:integration`
+Expected: PASS
+
+- [ ] **Step 7: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(app): rezervace objednavky s transakcnim odectem skladu"
+git push
+```
+
+---
+
+### Task 13: Autentizační use-cases
+
+**Files:**
+- Create: `src/application/use-cases/register-user.ts`, `login-user.ts`
+- Test: `tests/unit/application/auth.test.ts`
+
+**Interfaces:**
+- Consumes: `UserRepository`, `PasswordHasher`, `UnitOfWork` (Task 5); `User` (Task 4)
+- Produces:
+  ```ts
+  export interface AuthResult { userId: number; name: string; email: string; role: UserRole }
+  export class RegisterUser {
+    constructor(deps: { uow: UnitOfWork; hasher: PasswordHasher })
+    execute(input: { name: string; email: string; password: string }): Promise<AuthResult>
+  }
+  export class LoginUser {
+    constructor(deps: { uow: UnitOfWork; hasher: PasswordHasher })
+    execute(input: { email: string; password: string }): Promise<AuthResult>
+  }
+  ```
+
+- [ ] **Step 1: Napsat padající testy**
+
+```ts
+describe('RegisterUser', () => {
+  it('založí zákazníka s hashovaným heslem', async () => {
+    const ctx = makeAuthContext()
+    const result = await ctx.register.execute({ name: 'Jan Novák', email: 'JAN@Email.cz ', password: 'tajneheslo' })
+    expect(result.role).toBe(UserRole.CUSTOMER)
+    expect(result.email).toBe('jan@email.cz')          // normalizace na malá písmena a trim
+    expect(ctx.users.last()?.passwordHash).not.toBe('tajneheslo')
+  })
+
+  it('odmítne krátké heslo', async () => {
+    await expect(makeAuthContext().register.execute({ name: 'X', email: 'x@y.cz', password: 'krat' }))
+      .rejects.toThrow(/alespoň 8 znaků/)
+  })
+
+  it('odmítne již registrovaný e-mail', async () => {
+    const ctx = makeAuthContext({ existing: [{ email: 'jan@email.cz' }] })
+    await expect(ctx.register.execute({ name: 'Jan', email: 'jan@email.cz', password: 'tajneheslo' }))
+      .rejects.toThrow(ConflictError)
+  })
+
+  it('registrací nelze získat roli farmáře', async () => {
+    const ctx = makeAuthContext()
+    const result = await ctx.register.execute({
+      name: 'Podvodník', email: 'farmar@utok.cz', password: 'tajneheslo',
+      // i kdyby server action předala role, use-case ji nepřijímá — typ ji nemá
+    } as never)
+    expect(result.role).toBe(UserRole.CUSTOMER)
+  })
+})
+
+describe('LoginUser', () => {
+  it('přihlásí při správném heslu', async () => {
+    const ctx = makeAuthContext({ existing: [{ email: 'farma@silentagro.cz', password: 'brambory', role: UserRole.FARMER }] })
+    expect((await ctx.login.execute({ email: 'farma@silentagro.cz', password: 'brambory' })).role)
+      .toBe(UserRole.FARMER)
+  })
+
+  it('u špatného hesla i neznámého e-mailu hlásí totéž', async () => {
+    const ctx = makeAuthContext({ existing: [{ email: 'jan@email.cz', password: 'spravne' }] })
+    const wrongPassword = await ctx.login.execute({ email: 'jan@email.cz', password: 'spatne' }).catch((e) => e)
+    const unknownEmail = await ctx.login.execute({ email: 'nikdo@email.cz', password: 'spravne' }).catch((e) => e)
+    expect(wrongPassword.message).toBe(unknownEmail.message)
+    expect(wrongPassword.message).toBe('Nesprávný e-mail nebo heslo')
+  })
+
+  it('u neznámého e-mailu stejně provede ověření hesla', async () => {
+    const ctx = makeAuthContext()
+    await ctx.login.execute({ email: 'nikdo@email.cz', password: 'cokoliv' }).catch(() => {})
+    expect(ctx.hasher.verifyCalls).toBe(1)
+  })
+})
+```
+
+Poslední dva testy chrání proti dvěma reálným únikům: shodná hláška brání vyjmenování
+registrovaných e-mailů, a ověření proti pevnému „dummy“ hashi i pro neexistujícího
+uživatele srovnává dobu odpovědi, aby útočník nepoznal existující účet podle rychlosti.
+
+- [ ] **Step 2: Spustit, ověřit pád, implementovat, spustit znovu**
+
+`LoginUser` při nenalezeném uživateli zavolá `hasher.verify(password, DUMMY_HASH)`
+a výsledek zahodí. `DUMMY_HASH` je konstanta — bcrypt hash řetězce, který nikdo nepoužívá.
+
+Run: `npx vitest run tests/unit/application/auth.test.ts`
+Expected: PASS
+
+- [ ] **Step 3: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(app): registrace a prihlaseni uzivatele"
+git push
+```
+
+---
+
+### Task 14: Administrační use-cases
+
+**Files:**
+- Create: `src/application/use-cases/list-orders.ts`, `advance-order-status.ts`, `upsert-variety.ts`, `deactivate-variety.ts`, `publish-news.ts`, `delete-news.ts`, `get-admin-overview.ts`
+- Test: `tests/unit/application/admin.test.ts`
+
+**Interfaces:**
+- Produces:
+  ```ts
+  export interface OrderRowView {
+    id: number; code: string; customerName: string; customerEmail: string
+    itemsLabel: string; deliveryLabel: string; paymentLabel: string
+    totalLabel: string; status: OrderStatus; statusLabel: string
+  }
+  export interface AdminOverview { kpis: KpiView[]; bins: BinView[]; harvest: HarvestPointView[]; harvestSummary: string; harvestLast: string }
+  export interface UpsertVarietyInput {
+    id: number | null; name: string; tag: string; description: string
+    colorHex: string; priceCzk: number; stockKg: number; capacityKg: number
+  }
+
+  export class ListOrders { constructor(deps: { uow: UnitOfWork }); execute(limit?: number): Promise<OrderRowView[]> }
+  export class AdvanceOrderStatus { constructor(deps: { uow: UnitOfWork }); execute(orderId: number): Promise<OrderStatus> }
+  export class UpsertVariety { constructor(deps: { uow: UnitOfWork }); execute(input: UpsertVarietyInput): Promise<VarietyView> }
+  export class DeactivateVariety { constructor(deps: { uow: UnitOfWork }); execute(id: number): Promise<void> }
+  export class PublishNews { constructor(deps: { uow: UnitOfWork; clock: Clock }); execute(input: { title: string; body: string; tag: NewsTag; imageUrl: string | null; authorId: number }): Promise<NewsView> }
+  export class DeleteNews { constructor(deps: { uow: UnitOfWork }); execute(id: number): Promise<void> }
+  export class GetAdminOverview { constructor(deps: { uow: UnitOfWork; clock: Clock }); execute(): Promise<AdminOverview> }
+  ```
+
+- [ ] **Step 1: Napsat padající testy**
+
+```ts
+it('posouvá stav objednávky v cyklu', async () => {
+  const ctx = makeAdminContext({ orders: [orderWith(OrderStatus.NEW)] })
+  expect(await ctx.advance.execute(1)).toBe(OrderStatus.READY)
+  expect(await ctx.advance.execute(1)).toBe(OrderStatus.COLLECTED)
+  expect(await ctx.advance.execute(1)).toBe(OrderStatus.NEW)
+})
+
+it('nová odrůda dostane slug odvozený z názvu bez diakritiky', async () => {
+  const ctx = makeAdminContext()
+  const view = await ctx.upsert.execute({ id: null, name: 'Růžová Adéla', tag: 'raná', description: '', colorHex: '#c98a2b', priceCzk: 18, stockKg: 150, capacityKg: 150 })
+  expect(view.slug).toBe('ruzova-adela')
+})
+
+it('kolidující slug dostane číselnou příponu', async () => {
+  const ctx = makeAdminContext({ varieties: [bernie(10, 160, 22)] })   // slug 'bernie'
+  const view = await ctx.upsert.execute({ id: null, name: 'Bernie', tag: '', description: '', colorHex: '#c98a2b', priceCzk: 20, stockKg: 10, capacityKg: 10 })
+  expect(view.slug).toBe('bernie-2')
+})
+
+it('úprava existující odrůdy slug nemění', async () => {
+  const ctx = makeAdminContext({ varieties: [bernie(10, 160, 22)] })
+  const view = await ctx.upsert.execute({ id: 1, name: 'Bernie Extra', tag: '', description: '', colorHex: '#c98a2b', priceCzk: 25, stockKg: 10, capacityKg: 160 })
+  expect(view.slug).toBe('bernie')
+})
+
+it('odmítne zápornou cenu i sklad nad kapacitu', async () => {
+  const ctx = makeAdminContext()
+  await expect(ctx.upsert.execute({ ...base, priceCzk: -1 })).rejects.toThrow(ValidationError)
+  await expect(ctx.upsert.execute({ ...base, stockKg: 200, capacityKg: 150 })).rejects.toThrow(/kapacit/)
+})
+
+it('odrůdu s objednávkou deaktivuje místo smazání', async () => {
+  const ctx = makeAdminContext({ varieties: [bernie(10, 160, 22)] })
+  await ctx.deactivate.execute(1)
+  expect(ctx.varieties.get(1)?.isActive).toBe(false)
+})
+
+it('odmítne novinku bez titulku', async () => {
+  await expect(makeAdminContext().publishNews.execute({ title: '  ', body: 'x', tag: NewsTag.HARVEST, imageUrl: null, authorId: 1 }))
+    .rejects.toThrow(/titulek/i)
+})
+```
+
+- [ ] **Step 2: Spustit, ověřit pád, implementovat, spustit znovu**
+
+Slug: `name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')`.
+Kolize se řeší v cyklu `slug`, `slug-2`, `slug-3`, … dotazem na existující slugy.
+
+Run: `npx vitest run tests/unit/application/admin.test.ts`
+Expected: PASS
+
+- [ ] **Step 3: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(app): administracni use-cases pro sklad, objednavky a novinky"
+git push
+```
+
+---
+
+### Task 15: Server actions, middleware a ochrana administrace
+
+**Files:**
+- Create: `src/app/actions/auth.ts`, `order.ts`, `admin-stock.ts`, `admin-orders.ts`, `admin-news.ts`
+- Create: `src/middleware.ts`
+- Test: `tests/unit/actions/mapping.test.ts`
+
+**Interfaces:**
+- Consumes: use-cases (Tasky 11–14), `getContainer()` (Task 10), session helpery (Task 8)
+- Produces:
+  ```ts
+  // všechny server actions vracejí Result, nikdy nevyhazují do UI
+  export async function loginAction(_prev: unknown, formData: FormData): Promise<Result<AuthResult>>
+  export async function registerAction(_prev: unknown, formData: FormData): Promise<Result<AuthResult>>
+  export async function logoutAction(): Promise<void>
+  export async function reserveOrderAction(input: ReserveOrderPayload): Promise<Result<{ token: string }>>
+  export async function upsertVarietyAction(input: UpsertVarietyInput): Promise<Result<VarietyView>>
+  export async function deactivateVarietyAction(id: number): Promise<Result<null>>
+  export async function advanceOrderStatusAction(id: number): Promise<Result<OrderStatus>>
+  export async function publishNewsAction(formData: FormData): Promise<Result<NewsView>>
+  export async function deleteNewsAction(id: number): Promise<Result<null>>
+  export function toResultError(error: unknown): Result<never>   // DomainError → česká hláška + code
+  ```
+
+- [ ] **Step 1: Napsat test převodu chyb**
+
+```ts
+it('převede doménovou chybu na uživatelskou hlášku', () => {
+  const r = toResultError(new InsufficientStockError('Bernie', 2, 5))
+  expect(r.ok).toBe(false)
+  expect(r.error).toBe('Bernie: na skladě zbývá jen 2 kg')
+  expect(r.code).toBe('INSUFFICIENT_STOCK')
+})
+
+it('u neznámé chyby nevypustí vnitřní detail', () => {
+  const r = toResultError(new Error('Prisma: Access denied for user root@10.0.0.5'))
+  expect(r.error).toBe('Něco se nepovedlo. Zkuste to prosím znovu.')
+  expect(r.error).not.toContain('root@')
+})
+```
+
+Druhý test hlídá, že se do prohlížeče nedostanou hlášky databáze — ty prozrazují jména
+uživatelů a hostitelů.
+
+- [ ] **Step 2: Implementovat server actions**
+
+Každá admin action začíná `const session = await requireFarmer()` — nespoléhá se na
+middleware. Middleware je první obrana (přesměruje prohlížeč), kontrola v action je druhá
+(server action se dá zavolat přímo POSTem, middleware ji nemusí zachytit).
+
+`reserveOrderAction` a `loginAction` navíc volají rate limiter s klíčem z hlavičky:
+```ts
+const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+if (!orderLimiter.tryConsume(ip)) {
+  return err('Příliš mnoho pokusů. Zkuste to prosím za chvíli.', 'RATE_LIMITED')
+}
+```
+
+Po úspěšné mutaci se volá `revalidatePath` na dotčené cesty (`/`, `/burza`, `/sklad`, `/admin/...`),
+jinak by SSR stránky ukazovaly starý stav skladu z cache.
+
+- [ ] **Step 3: Implementovat `src/middleware.ts`**
+
+```ts
+import { NextResponse, type NextRequest } from 'next/server'
+import { verifySessionToken } from '@/infrastructure/auth/edge-session'
+import { UserRole } from '@/domain/enums'
+
+export async function middleware(request: NextRequest) {
+  const token = request.cookies.get('silentagro_session')?.value
+  const session = token ? await verifySessionToken(token, process.env.AUTH_SECRET ?? '') : null
+
+  if (!session || session.role !== UserRole.FARMER) {
+    const url = new URL('/', request.url)
+    url.searchParams.set('prihlaseni', 'vyzadovano')
+    return NextResponse.redirect(url)
+  }
+  return NextResponse.next()
+}
+
+export const config = { matcher: ['/admin/:path*'] }
+```
+
+Middleware sahá na `process.env` přímo, protože běží na Edge runtime, kde se modul
+`env.ts` (a jeho `zod` závislost) nemusí načíst stejně jako v Node. Je to jediná
+povolená výjimka z pravidla „env jen v `config/env.ts`“ a je tu okomentovaná v kódu.
+
+- [ ] **Step 4: Ověřit typecheck a testy; commit a push**
+
+```bash
+npm run typecheck && npx vitest run tests/unit
+git add -A
+git commit -m "feat(app): server actions, prevod chyb a ochrana administrace"
+git push
+```
+
+---
+
+### Task 16: UI primitiva a plášť aplikace
+
+**Files:**
+- Create: `src/components/ui/button.tsx`, `input.tsx`, `textarea.tsx`, `card.tsx`, `badge.tsx`, `chip.tsx`, `pill.tsx`, `field.tsx`
+- Create: `src/components/layout/site-header.tsx`, `site-footer.tsx`, `auth-modal.tsx`, `toast-host.tsx`, `session-provider.tsx`
+- Modify: `src/app/layout.tsx` — vložit plášť
+- Create: `src/components/ui/*.module.css` (CSS Modules)
+
+**Interfaces:**
+- Produces:
+  ```ts
+  export function Button(props: { variant?: 'primary' | 'secondary' | 'ghost' | 'gold' | 'danger'; size?: 'sm' | 'md' | 'lg' } & ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element
+  export function Input(props: InputHTMLAttributes<HTMLInputElement>): JSX.Element
+  export function Field(props: { label: string; children: ReactNode; hint?: string; error?: string }): JSX.Element
+  export function Card(props: { children: ReactNode; padding?: 'sm' | 'md' | 'lg'; tone?: 'surface' | 'ink' | 'sand' }): JSX.Element
+  export function Badge(props: { children: ReactNode; tone: 'green' | 'gold' | 'clay' | 'muted' }): JSX.Element
+  export function Chip(props: { active: boolean; children: ReactNode; onClick: () => void }): JSX.Element
+  export function Pill(props: { active: boolean; children: ReactNode; onClick: () => void }): JSX.Element
+  export function SiteHeader(props: { session: SessionPayload | null }): JSX.Element   // klientská, drží stav modalu
+  export function AuthModal(props: { open: boolean; onClose: () => void }): JSX.Element
+  export function useToast(): { show: (message: string) => void }
+  ```
+
+Styly: **CSS Modules**, ne inline `style` jako v prototypu. Inline styly se nedají
+theme-ovat, nejdou přes CSP bez `unsafe-inline` a duplikují se v každé instanci komponenty.
+Hodnoty barev se berou výhradně z CSS proměnných definovaných v Tasku 1.
+
+- [ ] **Step 1: Napsat primitiva**
+
+`Button` mapuje `variant` na třídu; `primary` = zelené pozadí `var(--green)` s bílým textem
+a hoverem na `var(--ink)`, `gold` = `var(--gold)` s tmavým textem (tlačítko „Závazně rezervovat“),
+`danger` = průhledné s textem `var(--clay)` (odkazy „odebrat“, „smazat“).
+
+- [ ] **Step 2: `SiteHeader` podle prototypu**
+
+Logo + název + „by Silent Industries“, navigace Domů / Burza / Sklad se zvýrazněním
+aktivní položky (`usePathname()`), tlačítko Košík s počtem řádků z `useCart()`,
+a podle session buď „Přihlásit“, nebo jméno + „odhlásit“, plus zlaté tlačítko
+„Administrace“ pro roli `FARMER`.
+
+- [ ] **Step 3: `AuthModal`**
+
+Taby Přihlášení / Registrace, pole podle režimu, chybová hláška z `Result`.
+Otevírá se i automaticky, když URL nese `?prihlaseni=vyzadovano` (přesměrování z middleware).
+
+Demo box z prototypu („Demo: farmář farma@silentagro.cz / heslo brambory“) se **nepřenáší** —
+v produkční aplikaci by to bylo zveřejněné přihlašovací heslo.
+
+- [ ] **Step 4: Ověřit build a commit**
+
+```bash
+npm run build
+git add -A
+git commit -m "feat(ui): primitiva, hlavicka, paticka, prihlasovaci modal a toasty"
+git push
+```
+
+---
+
+### Task 17: Homepage
+
+**Files:**
+- Modify: `src/app/page.tsx`
+- Create: `src/components/home/stock-hero.tsx`, `bin-chart.tsx`, `news-grid.tsx`, `how-it-works.tsx`
+
+**Interfaces:**
+- Consumes: `GetStockOverview`, `ListNews` (Task 11)
+- Produces: server komponenta `HomePage`, která si oba use-case zavolá paralelně přes `Promise.all`
+
+- [ ] **Step 1: Implementovat stránku**
+
+```tsx
+export const revalidate = 30   // stav skladu smí být 30 s starý; delší cache mate zákazníka
+
+export default async function HomePage() {
+  const c = getContainer()
+  const [overview, news] = await Promise.all([
+    new GetStockOverview({ uow: c.uow, clock: c.clock }).execute(),
+    new ListNews({ uow: c.uow }).execute(3),
+  ])
+  return (
+    <>
+      <StockHero overview={overview} />
+      <NewsGrid posts={news} />
+      <HowItWorks />
+    </>
+  )
+}
+```
+
+`StockHero` reprodukuje tmavý panel z prototypu: velké číslo `totalKgLabel`, zlaté „kg“,
+sloupce zásobníků z `overview.bins` a řádek „Poslední aktualizace“.
+
+Texty hero sekce, „Jak to funguje“ (4 kroky) a popisky přebírají znění prototypu doslova.
+
+- [ ] **Step 2: Ověřit v prohlížeči**
+
+Run: `npm run dev`, otevřít `http://localhost:3000`
+Expected: stránka ukazuje seedovaná data — 344 kg, 4 zásobníky, 3 novinky
+
+- [ ] **Step 3: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(web): homepage se stavem skladu a novinkami z pole"
+git push
+```
+
+---
+
+### Task 18: Burza a košík na klientovi
+
+**Files:**
+- Create: `src/app/burza/page.tsx`
+- Create: `src/components/shop/variety-card.tsx`, `quantity-stepper.tsx`
+- Create: `src/components/cart/cart-provider.tsx`
+- Modify: `src/app/layout.tsx` — obalit `CartProvider`
+- Test: `tests/unit/cart/cart-reducer.test.ts`
+
+**Interfaces:**
+- Produces:
+  ```ts
+  export interface CartLine { varietyId: number; quantityKg: number }
+  export type CartAction =
+    | { type: 'add'; varietyId: number; quantityKg: number }
+    | { type: 'setQty'; varietyId: number; quantityKg: number }
+    | { type: 'remove'; varietyId: number }
+    | { type: 'clear' }
+    | { type: 'hydrate'; lines: CartLine[] }
+  export function cartReducer(state: CartLine[], action: CartAction): CartLine[]
+  export function useCart(): { lines: CartLine[]; dispatch: Dispatch<CartAction>; count: number }
+  export const CART_STORAGE_KEY = 'silentagro.cart.v1'
+  ```
+
+- [ ] **Step 1: Napsat padající testy reduceru**
+
+```ts
+it('přidání téže odrůdy množství sečte', () => {
+  const s = cartReducer(cartReducer([], { type: 'add', varietyId: 1, quantityKg: 2 }), { type: 'add', varietyId: 1, quantityKg: 1.5 })
+  expect(s).toEqual([{ varietyId: 1, quantityKg: 3.5 }])
+})
+
+it('nastavení množství na nulu řádek odstraní', () => {
+  expect(cartReducer([{ varietyId: 1, quantityKg: 2 }], { type: 'setQty', varietyId: 1, quantityKg: 0 })).toEqual([])
+})
+
+it('hydratace zahodí poškozené řádky z localStorage', () => {
+  const s = cartReducer([], { type: 'hydrate', lines: [
+    { varietyId: 1, quantityKg: 2 },
+    { varietyId: 0, quantityKg: 5 },        // neplatné id
+    { varietyId: 2, quantityKg: -3 },       // záporné množství
+    { varietyId: 3, quantityKg: 0.3 },      // mimo půlkilový krok
+  ] as CartLine[] })
+  expect(s).toEqual([{ varietyId: 1, quantityKg: 2 }])
+})
+```
+
+Třetí test je podstatný: `localStorage` je pod kontrolou uživatele, takže obsah se validuje
+při načtení, ne jen při zápisu. Server si stejně všechno přepočítá, ale poškozený stav
+by jinak shodil vykreslení košíku.
+
+- [ ] **Step 2: Spustit, ověřit pád, implementovat, spustit znovu**
+
+`CartProvider` je klientská komponenta: `useReducer` + `useEffect` na zápis do `localStorage`
++ jednorázová hydratace v `useEffect` (ne při inicializaci — na serveru `localStorage` není
+a rozdíl by způsobil hydratační chybu Reactu).
+
+- [ ] **Step 3: Implementovat `/burza`**
+
+Server komponenta načte `ListVarieties`, karty jsou klientské kvůli stepperu.
+Vyprodaná odrůda ukazuje místo ovládání hlášku „Vyprodáno — čekáme na další výkop“.
+Stepper krokuje po 0,5 kg, dolní mez 0, horní mez je stav skladu.
+
+- [ ] **Step 4: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(web): burza s kosikem v localStorage"
+git push
+```
+
+---
+
+### Task 19: Stránka Sklad s grafy
+
+**Files:**
+- Create: `src/app/sklad/page.tsx`
+- Create: `src/components/stock/kpi-card.tsx`, `bin-bars.tsx`, `harvest-chart.tsx`, `field-map.tsx`
+
+**Interfaces:**
+- Consumes: `GetStockOverview` (Task 11)
+- Produces: `HarvestChart(props: { points: HarvestPointView[] })` — inline SVG, žádná knihovna
+
+- [ ] **Step 1: Implementovat `HarvestChart`**
+
+Graf je přímý přepis prototypu: `viewBox="0 0 620 190"`, sloupce = denní výkop (`#e0d5b8`),
+lomená čára = stav skladu (`--green`, `stroke-width: 3`, `vector-effect="non-scaling-stroke"`).
+Osa se škáluje na `Math.ceil(maxStock / 100) * 100`, mřížka po čtvrtinách.
+
+```tsx
+const W = 620, H = 190
+const maxStock = Math.max(...points.map((p) => p.stockKg), 1)
+const tickTop = Math.ceil(maxStock / 100) * 100
+const step = W / points.length
+const y = (v: number) => H - (v / (maxStock * 1.15)) * H
+```
+
+Graf je **server-rendered SVG** — žádný `useEffect`, žádná knihovna. Data se nemění za běhu
+stránky, takže klientská knihovna by přidala jen kilobajty a vrstvu, která může selhat.
+
+Přístupnost: `<svg role="img">` s `<title>` shrnujícím data slovy („Denní výkop a stav skladu
+za posledních 14 dní, aktuálně 344 kg“) — jinak je graf pro odečítač obrazovky prázdný.
+
+- [ ] **Step 2: Implementovat KPI, zásobníky a mapu polí**
+
+KPI hodnoty pocházejí z `GetStockOverview`: „Na skladě“ (součet), „Rezervováno“
+(`orders.reservedKgSince` za posledních 30 dní ve stavu `NEW`), „Sklizeno letos“
+(součet `harvest_entries.dugKg`), „Teplota stodoly“ (poslední `StorageReading`).
+
+Prototyp měl tato čísla natvrdo; tady se počítají z dat. Pokud čidlo nemá záznam,
+karta ukáže „—“ místo vymyšlené hodnoty.
+
+- [ ] **Step 3: Ověřit v prohlížeči a commit**
+
+```bash
+git add -A
+git commit -m "feat(web): stranka skladu s KPI, grafem vykopu a mapou poli"
+git push
+```
+
+---
+
+### Task 20: Košík, objednání a potvrzení
+
+**Files:**
+- Create: `src/app/kosik/page.tsx`, `src/app/rezervace/[token]/page.tsx`
+- Create: `src/components/cart/cart-lines.tsx`, `checkout-form.tsx`, `order-summary.tsx`, `mail-preview.tsx`
+- Test: doplnit `tests/unit/cart/checkout-validation.test.ts`
+
+**Interfaces:**
+- Consumes: `reserveOrderAction` (Task 15), `GetOrderByToken` (Task 11), `useCart` (Task 18), `ListVarieties`
+- Produces: `validateCheckout(form: CheckoutForm): Record<string, string>` — mapa pole → česká hláška
+
+- [ ] **Step 1: Napsat padající test validace formuláře**
+
+```ts
+it('vyžaduje jméno a e-mail', () => {
+  const errors = validateCheckout({ name: '', email: '', phone: '', note: '', delivery: 'PICKUP', payment: 'CASH' })
+  expect(errors.name).toBe('Vyplňte jméno a příjmení')
+  expect(errors.email).toBe('Vyplňte e-mail')
+})
+
+it('odmítne e-mail bez zavináče', () => {
+  expect(validateCheckout({ ...valid, email: 'jan.email.cz' }).email).toBe('E-mail nemá správný tvar')
+})
+
+it('u rozvozu vyžaduje telefon', () => {
+  expect(validateCheckout({ ...valid, delivery: 'LOCAL_DELIVERY', phone: '' }).phone)
+    .toBe('U rozvozu potřebujeme telefon')
+})
+
+it('platný formulář nemá chyby', () => {
+  expect(validateCheckout(valid)).toEqual({})
+})
+```
+
+Validace na klientovi je jen pro rychlou zpětnou vazbu. Server ji dělá znovu v `ReserveOrder` —
+klientská validace se dá obejít a nikdy se na ni nespoléhá.
+
+- [ ] **Step 2: Implementovat `/kosik`**
+
+Prázdný košík ukazuje přerušovaný rámeček s tlačítkem „Do burzy“ (jako prototyp).
+Naplněný má dva sloupce: vlevo řádky + kontakt + převzetí + platba + poznámka,
+vpravo lepivý tmavý souhrn s tlačítkem „Závazně rezervovat“.
+
+Souhrn počítá mezisoučet, dopravu a celkem **na klientovi jen pro zobrazení**; závazná
+částka je ta, kterou vrátí server. Po úspěchu se košík vyprázdní a stránka přesměruje
+na `/rezervace/<token>`.
+
+Chyba `INSUFFICIENT_STOCK` ze serveru se zobrazí u konkrétního řádku a nabídne snížení
+množství — mezi vložením do košíku a odesláním mohl někdo jiný sklad vyprodat.
+
+- [ ] **Step 3: Implementovat `/rezervace/[token]`**
+
+Zelený panel „Rezervace #2610 přijata“, pod ním dvě karty s náhledem odeslaných e-mailů
+(jako prototyp) a tlačítko zpět na úvod. Neexistující token → `notFound()`.
+
+`export const dynamic = 'force-dynamic'` — potvrzení nesmí být v cache; obsahuje osobní údaje.
+
+- [ ] **Step 4: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(web): kosik, zavazna rezervace a stranka potvrzeni"
+git push
+```
+
+---
+
+### Task 21: Administrace
+
+**Files:**
+- Create: `src/app/admin/layout.tsx`, `page.tsx`, `sklad/page.tsx`, `objednavky/page.tsx`, `novinky/page.tsx`
+- Create: `src/components/admin/admin-tabs.tsx`, `stock-row.tsx`, `add-variety-form.tsx`, `orders-table.tsx`, `news-composer.tsx`, `news-admin-list.tsx`
+- Create: `src/app/api/uploads/route.ts`
+
+**Interfaces:**
+- Consumes: admin use-cases (Task 14), admin server actions (Task 15)
+- Produces: `POST /api/uploads` → `Result<{ url: string }>`; přijímá jen `image/jpeg`, `image/png`, `image/webp` do 5 MB
+
+- [ ] **Step 1: `admin/layout.tsx` s ověřením role**
+
+```tsx
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const session = await readSession()
+  if (!session || session.role !== UserRole.FARMER) redirect('/?prihlaseni=vyzadovano')
+  return (
+    <section>
+      <AdminHeader userName={session.name} />
+      <AdminTabs />
+      {children}
+    </section>
+  )
+}
+```
+
+Taby prototypu jsou tady skutečné cesty (`/admin`, `/admin/sklad`, `/admin/objednavky`,
+`/admin/novinky`) místo stavu v paměti. Farmář si tak může záložku uložit a obnovení
+stránky ho nevrátí na přehled.
+
+- [ ] **Step 2: Tab Sklad a ceny**
+
+Řádek na odrůdu: název, sklad se stepperem ±5 kg, kapacita, cena, tlačítko „Smazat“
+(volá `deactivateVarietyAction`), rozbalovací část se štítkem, paletou osmi barev
+z prototypu a popisem. Uložení je explicitní tlačítko na řádku, ne auto-save při psaní —
+auto-save by posílal request na každý stisk klávesy.
+
+Pod tabulkou formulář „Přidat odrůdu“ podle prototypu.
+
+- [ ] **Step 3: Tab Objednávky**
+
+Tabulka `#kód / zákazník+e-mail / položky+doprava+platba / celkem / stav`.
+Tlačítko stavu posouvá `NEW → READY → COLLECTED → NEW` přes `advanceOrderStatusAction`,
+s optimistickým překreslením přes `useOptimistic`.
+
+- [ ] **Step 4: Tab Novinky + nahrávání fotek**
+
+Vlevo formulář (titulek, text, výběr tagu, nahrání fotky, tlačítko „Zveřejnit na homepage“),
+vpravo seznam publikovaných s možností smazat.
+
+`POST /api/uploads`:
+```ts
+const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const MAX_BYTES = 5 * 1024 * 1024
+// jméno souboru generuje server: crypto.randomUUID() + přípona odvozená z MIME,
+// nikdy ne file.name — ten je pod kontrolou útočníka (../../ i dvojité přípony)
+```
+
+Endpoint vyžaduje roli `FARMER`. Bez toho by šlo na server nahrávat cokoli anonymně.
+
+- [ ] **Step 5: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(admin): sprava skladu, objednavek a novinek vcetne nahravani fotek"
+git push
+```
+
+---
+
+### Task 22: Kontejnerizace — dva kontejnery, propojené
+
+**Files:**
+- Create: `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `docker-compose.prod.yml`
+- Create: `docker/entrypoint.sh`
+
+**Interfaces:**
+- Produces: compose se **dvěma službami** — `app` (Next.js) a `db` (MySQL 8) — které se propojí přímo na interní síti. Mailpit je volitelný a startuje jen s profilem `mail`, aby výchozí sestava zůstala přesně dvoukontejnerová.
+
+- [ ] **Step 1: `Dockerfile`**
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+
+FROM node:22-alpine AS deps
+WORKDIR /app
+RUN apk add --no-cache libc6-compat
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npx prisma generate && npm run build
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+RUN apk add --no-cache tini
+
+# standalone výstup nese jen to, co server opravdu potřebuje
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+# Prisma engine + schema pro `migrate deploy` při startu
+COPY --from=builder --chown=node:node /app/prisma ./prisma
+COPY --from=builder --chown=node:node /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=node:node /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder --chown=node:node /app/node_modules/prisma ./node_modules/prisma
+COPY --chown=node:node docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER node
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["node", "server.js"]
+```
+
+`tini` jako PID 1 je tam kvůli sklízení zombie procesů a správnému předání `SIGTERM` —
+bez něj Node jako PID 1 signály neobslouží a `docker stop` skončí až timeoutem po 10 s.
+
+- [ ] **Step 2: `docker/entrypoint.sh`**
+
+```sh
+#!/bin/sh
+set -e
+echo "Čekám na databázi…"
+npx prisma migrate deploy
+echo "Migrace nasazeny."
+exec "$@"
+```
+
+Migrace se pouští při startu kontejneru, ne při buildu — build nemá (a nesmí mít)
+přístup k produkční databázi.
+
+- [ ] **Step 3: `.dockerignore`**
+
+```
+.git
+.github
+node_modules
+.next
+coverage
+playwright-report
+test-results
+tests
+docs
+.env
+.env.*
+!.env.example
+**/*.md
+```
+
+- [ ] **Step 4: `docker-compose.yml` — dvě služby**
+
+```yaml
+name: silentagro
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?nastavte MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-silentagro}
+      MYSQL_USER: ${MYSQL_USER:-silentagro}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?nastavte MYSQL_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-silentagro}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-silentagro}
+      AUTH_SECRET: ${AUTH_SECRET:?nastavte AUTH_SECRET}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-SilentAgro <farma@silentagro.cz>}
+      FARMER_EMAIL: ${FARMER_EMAIL:-farma@silentagro.cz}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      UPLOAD_DIR: /app/public/uploads
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - uploads:/app/public/uploads
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # Volitelné: `docker compose --profile mail up` přidá odchytávač e-mailů.
+  # Bez profilu běží přesně dva kontejnery.
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: [mail]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  db-data:
+  uploads:
+
+networks:
+  internal:
+    driver: bridge
+```
+
+Bezpečnostní rozhodnutí, která tu stojí za vysvětlení:
+- **Port databáze se nepublikuje.** `app` se k ní dostane po interní síti jako `db:3306`. Vystavený 3306 na hostiteli je zbytečná plocha útoku.
+- **`ports: "127.0.0.1:3000:3000"`** místo `"3000:3000"` — bez prefixu Docker obchází firewall Windows i Linuxu a aplikace visí na všech rozhraních.
+- **`${VAR:?zpráva}`** u tajemství: compose odmítne nastartovat, když proměnná chybí, místo aby tiše použil prázdné heslo.
+- **`read_only: true`** u aplikace: Next.js standalone si za běhu do svého adresáře nic nezapisuje; zápis potřebuje jen `/tmp` a volume s fotkami.
+- Heslo root MySQL je oddělené od hesla aplikačního uživatele — aplikace root nikdy nepoužije.
+
+- [ ] **Step 5: Spustit a ověřit**
+
+```bash
+DOCKER="C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+cp .env.example .env    # doplnit AUTH_SECRET, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD
+"$DOCKER" compose up -d --build
+"$DOCKER" compose ps
+curl -fsS http://localhost:3000/api/health
+"$DOCKER" compose exec app node -e "console.log(process.getuid())"   # očekáváme 1000, ne 0
+```
+Expected: obě služby `healthy`, health vrací `{"status":"ok","database":"up"}`, uid `1000`
+
+- [ ] **Step 6: Seed uvnitř kontejneru**
+
+```bash
+"$DOCKER" compose exec -e SEED_FARMER_PASSWORD=zvolene-heslo app npx tsx prisma/seed.ts
+```
+
+- [ ] **Step 7: Commit a push**
+
+```bash
+git add -A
+git commit -m "feat(docker): dvoukontejnerova sestava aplikace a MySQL"
+git push
+```
+
+---
+
+### Task 23: CI/CD
+
+**Files:**
+- Create: `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/dependabot.yml`
+
+- [ ] **Step 1: `ci.yml`**
+
+```yaml
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test -- --coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: coverage, path: coverage/ }
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: silentagro_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/silentagro_test
+      AUTH_SECRET: ci-secret-ci-secret-ci-secret-1234
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      MAIL_FROM: SilentAgro <farma@silentagro.cz>
+      FARMER_EMAIL: farma@silentagro.cz
+      PUBLIC_BASE_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run test:integration
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Připravit .env pro compose
+        run: |
+          {
+            echo "MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)"
+            echo "MYSQL_PASSWORD=$(openssl rand -hex 16)"
+            echo "AUTH_SECRET=$(openssl rand -base64 48)"
+            echo "SEED_FARMER_PASSWORD=$(openssl rand -hex 12)"
+          } >> .env
+      - run: docker compose up -d --build
+      - name: Počkat na health
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:3000/api/health && exit 0
+            sleep 3
+          done
+          docker compose logs --no-color
+          exit 1
+      - run: docker compose exec -T --env SEED_FARMER_PASSWORD="$(grep SEED_FARMER_PASSWORD .env | cut -d= -f2)" app npx tsx prisma/seed.ts
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci && npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - if: failure()
+        run: docker compose logs --no-color
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: playwright-report/ }
+
+  security:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Audit závislostí
+        run: npm audit --audit-level=high
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
+      - name: Sestavit image pro sken
+        run: docker build -t silentagro:scan .
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: silentagro:scan
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: trivy.sarif }
+```
+
+`ignore-unfixed: true` je vědomý ústupek: bez něj build padá na zranitelnostech base image,
+pro které ještě neexistuje oprava, a tým si zvykne pipeline ignorovat. Opravitelné
+HIGH/CRITICAL nálezy build shodí.
+
+`permissions: contents: read` na úrovni workflow je záměr — výchozí `GITHUB_TOKEN`
+má jinak zápis do repozitáře, což žádný z těchto jobů nepotřebuje.
+
+- [ ] **Step 2: `release.yml`**
+
+Spouští se na tag `v*`: přihlášení do GHCR, `docker/build-push-action` s cache,
+`anchore/sbom-action` (syft → SPDX), `sigstore/cosign-installer` + `cosign sign --yes`
+s keyless podpisem přes OIDC. `permissions: { contents: read, packages: write, id-token: write }`.
+
+- [ ] **Step 3: `dependabot.yml`** — týdenní aktualizace pro `npm`, `github-actions` a `docker`.
+
+- [ ] **Step 4: Commit a push, ověřit běh pipeline**
+
+```bash
+git add -A
+git commit -m "ci: pipeline kvality, integrace, e2e, bezpecnosti a vydani"
+git push
+```
+
+Po pushi zkontrolovat na GitHubu, že všechny čtyři joby prošly.
+
+---
+
+### Task 24: E2E testy a závěrečné ověření
+
+**Files:**
+- Create: `playwright.config.ts`, `tests/e2e/nakup.spec.ts`, `tests/e2e/admin.spec.ts`, `tests/e2e/pristup.spec.ts`
+- Create: `README.md`
+
+- [ ] **Step 1: `playwright.config.ts`**
+
+```ts
+export default defineConfig({
+  testDir: './tests/e2e',
+  timeout: 30_000,
+  retries: process.env.CI ? 2 : 0,
+  reporter: process.env.CI ? [['html'], ['github']] : [['list']],
+  use: { baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000', trace: 'retain-on-failure' },
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+})
+```
+
+- [ ] **Step 2: `tests/e2e/nakup.spec.ts`**
+
+```ts
+test('zákazník si rezervuje brambory a dostane potvrzení', async ({ page }) => {
+  await page.goto('/burza')
+  const card = page.getByRole('article', { name: /Bernie/ })
+  await card.getByRole('button', { name: 'Rezervovat' }).click()
+
+  await page.getByRole('button', { name: /Košík/ }).click()
+  await page.getByLabel('Jméno a příjmení').fill('Jan Novák')
+  await page.getByLabel(/E-mail/).fill('jan@email.cz')
+  await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
+
+  await expect(page).toHaveURL(/\/rezervace\//)
+  await expect(page.getByText(/Rezervace #\d+ přijata/)).toBeVisible()
+  await expect(page.getByText('jan@email.cz')).toBeVisible()
+})
+
+test('rezervace sníží stav skladu na burze', async ({ page }) => {
+  await page.goto('/burza')
+  const before = await readStock(page, 'Bernie')
+  await reserve(page, 'Bernie', 2.5)
+  await page.goto('/burza')
+  expect(await readStock(page, 'Bernie')).toBe(before - 2.5)
+})
+```
+
+- [ ] **Step 3: `tests/e2e/admin.spec.ts` a `pristup.spec.ts`**
+
+```ts
+test('nepřihlášený návštěvník se do administrace nedostane', async ({ page }) => {
+  await page.goto('/admin')
+  await expect(page).toHaveURL(/prihlaseni=vyzadovano/)
+})
+
+test('farmář změní sklad a zveřejní novinku', async ({ page }) => {
+  await loginAsFarmer(page)
+  await page.goto('/admin/sklad')
+  await page.getByLabel('Sklad (kg)').first().fill('200')
+  await page.getByRole('button', { name: 'Uložit' }).first().click()
+
+  await page.goto('/admin/novinky')
+  await page.getByPlaceholder(/Dnes jsme vykopali/).fill('Test novinka z E2E')
+  await page.getByRole('button', { name: 'Zveřejnit na homepage' }).click()
+
+  await page.goto('/')
+  await expect(page.getByText('Test novinka z E2E')).toBeVisible()
+})
+```
+
+Heslo farmáře v E2E se bere z `E2E_FARMER_PASSWORD`, stejné jako `SEED_FARMER_PASSWORD`
+v CI. Žádné heslo v repozitáři.
+
+- [ ] **Step 4: Napsat `README.md`**
+
+Rozjezd na tři příkazy (`cp .env.example .env`, vyplnit tajemství, `docker compose up -d --build`),
+popis architektury odkazem na spec, tabulka proměnných prostředí, jak pustit testy,
+jak nasadit (`docker-compose.prod.yml`).
+
+- [ ] **Step 5: Závěrečné ověření celé sestavy**
+
+```bash
+DOCKER="C:\Program Files\Docker\Docker\resources\bin\docker.exe"
+npm run lint && npm run typecheck && npm run test
+npm run test:integration
+"$DOCKER" compose down -v && "$DOCKER" compose up -d --build
+curl -fsS http://localhost:3000/api/health
+npm run test:e2e
+```
+Expected: všechno zelené; do zprávy uživateli se píše skutečný výstup, ne domněnka
+
+- [ ] **Step 6: Commit a push**
+
+```bash
+git add -A
+git commit -m "test: E2E scenare nakupu a administrace, README"
+git push
+```
+
+---
+
+## Pořadí a závislosti
+
+```
+1 scaffold
+├─ 2 prisma schema
+│  ├─ 6 prisma infra ── 7 seed
+│  └─ 22 docker
+├─ 3 value objects ── 4 entity ── 5 porty
+│                                 ├─ 6 prisma infra
+│                                 ├─ 8 auth infra ─┐
+│                                 ├─ 9 mail infra ─┼─ 10 DI
+│                                 └─ 11 čtecí UC   │
+│                                    12 ReserveOrder (potřebuje 6, 9, 10)
+│                                    13 auth UC (potřebuje 8, 10)
+│                                    14 admin UC (potřebuje 10)
+├─ 15 actions + middleware (potřebuje 11–14)
+└─ 16 UI plášť ── 17 domů ── 18 burza ── 19 sklad ── 20 košík ── 21 admin
+                                                                  └─ 23 CI ── 24 E2E
+```
+
+Tasky 3–5 a 22 jdou dělat souběžně s 2 a 6. Tasky 17–21 jdou souběžně po dokončení 16.
+
+## Definice hotového
+
+- `npm run lint`, `npm run typecheck`, `npm run test`, `npm run test:integration`, `npm run test:e2e` procházejí
+- `docker compose up -d --build` rozjede dva kontejnery, oba `healthy`
+- `/api/health` vrací `{"status":"ok","database":"up"}`
+- Aplikace v kontejneru běží pod uid 1000 s `read_only` kořenovým systémem
+- Žádné tajemství v repozitáři ani v image; `.env.example` obsahuje jen tvary hodnot
+- Pipeline na GitHubu je zelená ve všech čtyřech jobech
