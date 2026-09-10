@@ -18,7 +18,7 @@ převod na produkční aplikaci s MySQL, SMTP, autentizací, kontejnerizací a C
 |---|---|---|
 | Runtime / framework | Next.js 15 (App Router), React 19, TypeScript strict | SSR pro veřejné stránky (stav skladu má být rychlý a indexovatelný), server actions jako tenké adaptéry, jeden deploy artefakt |
 | Databáze | MySQL 8 přes Prisma | Zadání; Prisma dává typované migrace a `$transaction` s row-level zámky |
-| Mail | nodemailer (SMTP) | Potvrzení zákazníkovi + notifikace farmáři |
+| Mail | nodemailer (SMTP) s přepínatelným driverem | Potvrzení zákazníkovi + notifikace farmáři; ve vývoji Mailpit, v produkci vlastní SMTP |
 | Auth | bcrypt + JWT (`jose`) v httpOnly cookie | Bez externí závislosti, role `CUSTOMER` / `FARMER` |
 | Validace | Zod | Vstupy z formulářů i env proměnné |
 | Testy | Vitest (unit + integrace), Playwright (E2E) | |
@@ -126,6 +126,64 @@ odvozuje se z auto-increment `id` (`#${2609 + id}`) až po insertu, uvnitř té�
 bajtů base64url) je to jediné, co jde do veřejné URL potvrzení. Kdyby v URL byl sekvenční
 kód, kdokoli by vyjmenoval `/rezervace/2611` a přečetl jméno, e-mail, telefon a poznámku
 cizího zákazníka.
+
+## 5a. Přepínání mailového driveru
+
+`MAIL_DRIVER` volí, kam odchází pošta. Aplikace se nikdy nedozví rozdíl — všechny tři
+varianty implementují stejný port `Mailer`.
+
+| `MAIL_DRIVER` | Chování | Kdy |
+|---|---|---|
+| `mailpit` | SMTP na `SMTP_HOST` (výchozí `mailpit`), port `1025`, bez TLS, bez přihlášení. Zprávy se nikam neodešlou, čtou se v UI na `http://localhost:8025`. | Vývoj a ruční testování — **výchozí hodnota** |
+| `smtp` | Skutečný SMTP server z `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASSWORD`. Vyžaduje vyplněný host; s `SMTP_USER` se posílá i přihlášení. | Produkce |
+| `memory` | Nic neodesílá, zprávy si drží v poli. | Unit testy a CI, kde žádný kontejner neběží |
+
+Volba driveru je věc konfigurace, ne kódu: `container.ts` podle `MAIL_DRIVER` sestaví
+odpovídající implementaci `Mailer` a zbytek aplikace o tom neví. Kdyby driver rozhodoval
+až v odesílajícím kódu, prosákla by konfigurace do use-case.
+
+Ochrana proti omylu: při `NODE_ENV=production` a `MAIL_DRIVER` jiném než `smtp` aplikace
+nenastartuje. Produkce, která tiše zahazuje potvrzení objednávek, je horší než produkce,
+která nenaběhne.
+
+Mailpit běží v compose za profilem `mail` (`docker compose --profile mail up`), takže
+výchozí sestava zůstává dvoukontejnerová a Mailpit se přidá jen, když ho chcete.
+
+## 5b. QR platba
+
+Farma inkasuje převodem. Když si zákazník zvolí platbu `QR platba` nebo `Převodem na účet`,
+aplikace mu vygeneruje český QR kód podle standardu **SPAYD** (Short Payment Descriptor, ČBA).
+
+```
+SPD*1.0*ACC:CZ6508000000192000145399*AM:182.00*CC:CZK*X-VS:2610*MSG:SilentAgro rezervace 2610
+```
+
+- `ACC` — IBAN z `BANK_ACCOUNT_IBAN`, bez mezer
+- `AM` — celková částka na dvě desetinná místa
+- `CC` — vždy `CZK`
+- `X-VS` — variabilní symbol = číselná část kódu objednávky (`#2610` → `2610`)
+- `MSG` — zpráva pro příjemce, max 60 znaků, bez diakritiky (banky ji jinak komolí)
+
+Kód se generuje **jednou v aplikaci**, ne přes externí službu — poslat částku a číslo účtu
+zákazníka na cizí API kvůli obrázku je zbytečný únik dat i závislost na cizí dostupnosti.
+
+Zobrazuje se na dvou místech:
+- **Stránka potvrzení** `/rezervace/[token]` — jako `data:` URI přímo v `<img>`, vedle
+  čitelného výpisu čísla účtu, částky a variabilního symbolu (QR nesmí být jediná cesta k údajům)
+- **E-mail zákazníkovi** — jako **inline příloha s `Content-ID`** (`cid:qr@silentagro`).
+  `data:` URI v `<img>` Gmail i Outlook blokují, proto musí jít přílohou. Textová část
+  e-mailu obsahuje stejné údaje slovy, aby platba šla i bez načtení obrázků.
+
+Při platbě `Hotově při převzetí` se QR negeneruje ani nezobrazuje.
+
+Nové proměnné prostředí:
+
+| Proměnná | Význam |
+|---|---|
+| `BANK_ACCOUNT_IBAN` | IBAN farmy, mezery povolené a při načtení se odstraní; validuje se mod-97 |
+| `BANK_ACCOUNT_NUMBER` | Lidsky čitelné číslo účtu (`2000145399/0800`) pro výpis v e-mailu a na stránce |
+
+Bez `BANK_ACCOUNT_IBAN` aplikace nenastartuje — nabízet převod bez čísla účtu nedává smysl.
 
 ## 6. Stránky
 

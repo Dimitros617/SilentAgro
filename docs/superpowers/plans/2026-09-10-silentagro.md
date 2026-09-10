@@ -3420,3 +3420,455 @@ Tasky 3–5 a 22 jdou dělat souběžně s 2 a 6. Tasky 17–21 jdou souběžně
 - Aplikace v kontejneru běží pod uid 1000 s `read_only` kořenovým systémem
 - Žádné tajemství v repozitáři ani v image; `.env.example` obsahuje jen tvary hodnot
 - Pipeline na GitHubu je zelená ve všech čtyřech jobech
+
+---
+
+## Dodatek A — přepínatelný mailový driver a QR platba
+
+Tyto dva požadavky přišly po sepsání tasků 1–24. Mění tři existující tasky a přidávají dva
+nové. Změny existujících tasků jsou vypsané tady; kdo dělá Task 1, 9 nebo 20, musí si přečíst
+i tento dodatek.
+
+### Změny v existujících tascích
+
+**Task 1 — `Env` se rozšiřuje o pět klíčů:**
+
+```ts
+export type MailDriver = 'mailpit' | 'smtp' | 'memory'
+
+export interface Env {
+  // ... vše dosavadní ...
+  MAIL_DRIVER: MailDriver           // default 'mailpit'
+  BANK_ACCOUNT_IBAN: string         // bez mezer, validováno mod-97
+  BANK_ACCOUNT_NUMBER: string       // "2000145399/0800", jen k zobrazení
+}
+```
+
+Zod schéma přidá:
+```ts
+MAIL_DRIVER: z.enum(['mailpit', 'smtp', 'memory']).default('mailpit'),
+BANK_ACCOUNT_IBAN: z.string().min(1).transform((v) => v.replace(/\s+/g, '').toUpperCase())
+  .refine(isValidIban, 'BANK_ACCOUNT_IBAN nemá platné kontrolní číslice'),
+BANK_ACCOUNT_NUMBER: z.string().min(1),
+```
+a nakonec průřezovou kontrolu:
+```ts
+.superRefine((v, ctx) => {
+  if (v.NODE_ENV === 'production' && v.MAIL_DRIVER !== 'smtp') {
+    ctx.addIssue({ code: 'custom', path: ['MAIL_DRIVER'],
+      message: 'V produkci musí být MAIL_DRIVER=smtp, jinak by se potvrzení objednávek tiše zahazovala' })
+  }
+  if (v.MAIL_DRIVER === 'smtp' && v.SMTP_HOST.length === 0) {
+    ctx.addIssue({ code: 'custom', path: ['SMTP_HOST'], message: 'Při MAIL_DRIVER=smtp je SMTP_HOST povinný' })
+  }
+})
+```
+
+`SMTP_HOST` a `SMTP_PORT` dostávají výchozí hodnoty `'mailpit'` a `1025`, aby vývojová
+konfigurace nemusela vyplňovat nic navíc.
+
+**`.env.example` se rozšiřuje:**
+
+```dotenv
+# --- Pošta ---
+# mailpit = odchytávač ve vývoji (nic se reálně neodešle, UI na http://localhost:8025)
+# smtp    = skutečný SMTP server (povinné v produkci)
+# memory  = nic neodesílá, drží zprávy v paměti (testy, CI)
+MAIL_DRIVER="mailpit"
+SMTP_HOST="mailpit"
+SMTP_PORT="1025"
+SMTP_SECURE="false"
+SMTP_USER=""
+SMTP_PASSWORD=""
+MAIL_FROM="SilentAgro <farma@silentagro.cz>"
+FARMER_EMAIL="farma@silentagro.cz"
+
+# --- Bankovní účet pro QR platbu ---
+# IBAN farmy; mezery jsou povolené, aplikace je odstraní. Kontrolní číslice se ověřují.
+BANK_ACCOUNT_IBAN="CZ65 0800 0000 1920 0014 5399"
+# Číslo účtu tak, jak ho má vidět zákazník v e-mailu a na stránce
+BANK_ACCOUNT_NUMBER="2000145399/0800"
+```
+
+**Task 9 — `MailMessage` dostává přílohy:**
+
+```ts
+export interface MailAttachment {
+  filename: string
+  content: Buffer
+  contentType: string
+  cid?: string          // vyplněné = inline obrázek odkazovaný z HTML jako cid:<hodnota>
+}
+export interface MailMessage {
+  to: string
+  subject: string
+  text: string
+  html?: string
+  attachments?: MailAttachment[]
+}
+```
+
+Existující volání se nemění — `html` i `attachments` jsou volitelné.
+
+**Task 20 — stránka potvrzení** navíc zobrazuje platební blok, viz Task 26.
+
+---
+
+### Task 25: Mailové drivery
+
+**Files:**
+- Create: `src/infrastructure/mail/memory-mailer.ts`
+- Modify: `src/infrastructure/mail/nodemailer-mailer.ts` — podpora příloh
+- Modify: `src/infrastructure/di/container.ts` — výběr driveru podle `env.MAIL_DRIVER`
+- Test: `tests/unit/mail/driver-selection.test.ts`
+
+**Interfaces:**
+- Consumes: `Mailer`, `MailMessage`, `MailAttachment` (Task 5 + dodatek), `env` (Task 1)
+- Produces:
+  ```ts
+  export class MemoryMailer implements Mailer {
+    readonly sent: MailMessage[]
+    send(message: MailMessage): Promise<void>
+    clear(): void
+  }
+  export function createMailer(config: {
+    driver: MailDriver
+    host: string; port: number; secure: boolean
+    user: string | undefined; password: string | undefined
+    from: string
+  }): Mailer
+  ```
+
+- [ ] **Step 1: Napsat padající test výběru driveru**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { createMailer } from '@/infrastructure/mail/create-mailer'
+import { MemoryMailer } from '@/infrastructure/mail/memory-mailer'
+import { NodemailerMailer } from '@/infrastructure/mail/nodemailer-mailer'
+
+const base = { host: 'mailpit', port: 1025, secure: false, user: undefined, password: undefined, from: 'f@x.cz' }
+
+describe('createMailer', () => {
+  it('driver memory vrátí paměťový odesílatel', () => {
+    expect(createMailer({ ...base, driver: 'memory' })).toBeInstanceOf(MemoryMailer)
+  })
+
+  it('driver mailpit vrátí SMTP odesílatel bez přihlášení', () => {
+    const mailer = createMailer({ ...base, driver: 'mailpit', user: 'ignorovat', password: 'ignorovat' })
+    expect(mailer).toBeInstanceOf(NodemailerMailer)
+    expect((mailer as NodemailerMailer).describe()).toBe('mailpit://mailpit:1025 (bez přihlášení)')
+  })
+
+  it('driver smtp předá přihlašovací údaje', () => {
+    const mailer = createMailer({ ...base, driver: 'smtp', host: 'smtp.seznam.cz', port: 465, secure: true, user: 'farma', password: 'tajne' })
+    expect((mailer as NodemailerMailer).describe()).toBe('smtp://smtp.seznam.cz:465 (přihlášen jako farma)')
+  })
+
+  it('popis driveru neobsahuje heslo', () => {
+    const mailer = createMailer({ ...base, driver: 'smtp', host: 'smtp.seznam.cz', port: 465, secure: true, user: 'farma', password: 'tajne' })
+    expect((mailer as NodemailerMailer).describe()).not.toContain('tajne')
+  })
+})
+
+it('paměťový odesílatel sbírá zprávy a jde vyprázdnit', async () => {
+  const mailer = new MemoryMailer()
+  await mailer.send({ to: 'a@b.cz', subject: 'Test', text: 'x' })
+  expect(mailer.sent).toHaveLength(1)
+  mailer.clear()
+  expect(mailer.sent).toHaveLength(0)
+})
+```
+
+`describe()` existuje kvůli logu při startu („Pošta: mailpit://mailpit:1025“) — poslední
+test hlídá, že se do logu nikdy nedostane heslo.
+
+- [ ] **Step 2: Spustit, ověřit pád**
+
+Run: `npx vitest run tests/unit/mail`
+Expected: FAIL
+
+- [ ] **Step 3: Implementovat**
+
+```ts
+export function createMailer(config: CreateMailerConfig): Mailer {
+  if (config.driver === 'memory') return new MemoryMailer()
+
+  // mailpit nikdy nepoužívá přihlášení ani TLS, i kdyby je konfigurace obsahovala
+  const auth = config.driver === 'smtp' && config.user
+    ? { user: config.user, password: config.password ?? '' }
+    : undefined
+
+  return new NodemailerMailer({
+    driver: config.driver,
+    host: config.host,
+    port: config.port,
+    secure: config.driver === 'smtp' ? config.secure : false,
+    auth,
+    from: config.from,
+  })
+}
+```
+
+`NodemailerMailer.send` mapuje `attachments` na tvar nodemaileru
+(`{ filename, content, contentType, cid, contentDisposition: 'inline' }` pro přílohy s `cid`).
+
+- [ ] **Step 4: Zapojit do kontejneru; testy pouštět s `MAIL_DRIVER=memory`**
+
+`vitest.config.ts` dostane `test.env: { MAIL_DRIVER: 'memory' }`, aby žádný test omylem
+nesahal na síť.
+
+- [ ] **Step 5: Spustit testy, commit a push**
+
+```bash
+npx vitest run tests/unit/mail
+git add -A
+git commit -m "feat(mail): prepinatelny driver mailpit / smtp / memory"
+git push
+```
+
+---
+
+### Task 26: QR platba podle standardu SPAYD
+
+**Files:**
+- Create: `src/domain/value-objects/iban.ts`
+- Create: `src/infrastructure/payment/spayd.ts`, `src/infrastructure/payment/qr-code.ts`
+- Modify: `src/infrastructure/mail/templates.ts` — QR do e-mailu
+- Modify: `src/app/rezervace/[token]/page.tsx` — platební blok
+- Create: `src/components/cart/payment-block.tsx`
+- Test: `tests/unit/payment/iban.test.ts`, `tests/unit/payment/spayd.test.ts`
+
+**Interfaces:**
+- Consumes: `Order` (Task 4), `Money`, `env` (Task 1 + dodatek)
+- Produces:
+  ```ts
+  export function isValidIban(raw: string): boolean          // mod-97, délka podle země
+  export class Iban {
+    static of(raw: string): Iban                             // ValidationError při neplatném
+    get value(): string                                      // bez mezer, velká písmena
+    get formatted(): string                                  // po čtveřicích: "CZ65 0800 0000 1920 0014 5399"
+  }
+
+  export interface SpaydInput {
+    iban: string; amount: Money; variableSymbol: string; message: string
+  }
+  export function buildSpayd(input: SpaydInput): string
+
+  export async function renderQrPng(payload: string): Promise<Buffer>
+  export async function renderQrDataUrl(payload: string): Promise<string>
+
+  export interface PaymentDetails {
+    accountNumber: string; iban: string; ibanFormatted: string
+    amountLabel: string; variableSymbol: string; message: string
+    spayd: string
+  }
+  export function buildPaymentDetails(order: Order, bank: { iban: Iban; accountNumber: string }): PaymentDetails
+  export function requiresTransfer(payment: PaymentMethod): boolean   // QR_CODE | BANK_TRANSFER
+  ```
+
+Nová závislost: `npm i qrcode` + `npm i -D @types/qrcode`.
+
+- [ ] **Step 1: Napsat padající testy IBANu**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { Iban, isValidIban } from '@/domain/value-objects/iban'
+import { ValidationError } from '@/domain/errors'
+
+describe('Iban', () => {
+  it('přijme platný český IBAN s mezerami i bez', () => {
+    expect(Iban.of('CZ6508000000192000145399').value).toBe('CZ6508000000192000145399')
+    expect(Iban.of('cz65 0800 0000 1920 0014 5399').value).toBe('CZ6508000000192000145399')
+  })
+
+  it('naformátuje po čtveřicích', () => {
+    expect(Iban.of('CZ6508000000192000145399').formatted).toBe('CZ65 0800 0000 1920 0014 5399')
+  })
+
+  it('odmítne překlep v kontrolních číslicích', () => {
+    // změněna jedna číslice → mod-97 neprojde
+    expect(() => Iban.of('CZ6608000000192000145399')).toThrow(ValidationError)
+  })
+
+  it('odmítne špatnou délku pro danou zemi', () => {
+    expect(isValidIban('CZ650800000019200014539')).toBe(false)   // o znak kratší
+  })
+
+  it('odmítne nesmysl', () => {
+    expect(isValidIban('rozbite')).toBe(false)
+    expect(isValidIban('')).toBe(false)
+  })
+})
+```
+
+Kontrola mod-97: přesuň první čtyři znaky na konec, písmena nahraď `A=10 … Z=35`, výsledné
+číslo počítej po částech (`BigInt` nebo postupné `% 97`, protože číslo je delší než `Number.MAX_SAFE_INTEGER`),
+platný IBAN dává zbytek 1.
+
+- [ ] **Step 2: Napsat padající testy SPAYD**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { buildSpayd } from '@/infrastructure/payment/spayd'
+import { Money } from '@/domain/value-objects/money'
+
+describe('buildSpayd', () => {
+  it('složí řetězec v pořadí předepsaném standardem', () => {
+    expect(buildSpayd({
+      iban: 'CZ6508000000192000145399',
+      amount: Money.fromCzk(182),
+      variableSymbol: '2610',
+      message: 'SilentAgro rezervace 2610',
+    })).toBe('SPD*1.0*ACC:CZ6508000000192000145399*AM:182.00*CC:CZK*X-VS:2610*MSG:SilentAgro rezervace 2610')
+  })
+
+  it('částku píše vždy na dvě desetinná místa s tečkou', () => {
+    expect(buildSpayd({ ...base, amount: Money.fromCzk(1234.5) })).toContain('*AM:1234.50*')
+    expect(buildSpayd({ ...base, amount: Money.fromCzk(60) })).toContain('*AM:60.00*')
+  })
+
+  it('odstraní z MSG diakritiku a zkrátí na 60 znaků', () => {
+    const spayd = buildSpayd({ ...base, message: 'Příliš žluťoučký kůň úpěl ďábelské ódy a ještě něco navíc dlouhého' })
+    const msg = spayd.split('*MSG:')[1] ?? ''
+    expect(msg).not.toMatch(/[ěščřžýáíéůúďťňĚŠČŘŽÝÁÍÉŮÚ]/)
+    expect(msg.length).toBeLessThanOrEqual(60)
+  })
+
+  it('odstraní hvězdičku z MSG, aby nerozbila oddělovače', () => {
+    expect(buildSpayd({ ...base, message: 'a*b' })).toContain('*MSG:ab')
+  })
+})
+```
+
+Poslední test řeší skutečnou past: `*` je v SPAYD oddělovač polí. Poznámka zákazníka se do
+`MSG` nedostává, ale název farmy nebo kód objednávky by hvězdičku obsahovat mohl a rozbil by
+celý řetězec — banka by pak přečetla nesmysl.
+
+- [ ] **Step 3: Spustit, ověřit pád, implementovat, spustit znovu**
+
+```ts
+const sanitizeMessage = (raw: string): string =>
+  raw.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+     .replace(/[*\r\n]/g, '')
+     .trim()
+     .slice(0, 60)
+
+export function buildSpayd(input: SpaydInput): string {
+  return [
+    'SPD', '1.0',
+    `ACC:${input.iban}`,
+    `AM:${input.amount.czk.toFixed(2)}`,
+    'CC:CZK',
+    `X-VS:${input.variableSymbol}`,
+    `MSG:${sanitizeMessage(input.message)}`,
+  ].join('*')
+}
+```
+
+Variabilní symbol vzniká z kódu objednávky odstraněním `#`: `order.code.replace(/\D/g, '')`.
+
+Run: `npx vitest run tests/unit/payment`
+Expected: PASS
+
+- [ ] **Step 4: QR generátor**
+
+```ts
+import QRCode from 'qrcode'
+
+const OPTIONS = { errorCorrectionLevel: 'M', margin: 2, width: 320 } as const
+
+export const renderQrPng = (payload: string): Promise<Buffer> =>
+  QRCode.toBuffer(payload, { ...OPTIONS, type: 'png' })
+
+export const renderQrDataUrl = (payload: string): Promise<string> =>
+  QRCode.toDataURL(payload, OPTIONS)
+```
+
+Úroveň korekce `M` je kompromis: `L` selhává při focení z displeje pod úhlem, `H` zvětší
+mřížku natolik, že se na mobilu hůř zaostřuje.
+
+- [ ] **Step 5: Zapojit do e-mailu (Task 9 šablony)**
+
+`renderCustomerConfirmation` dostane třetí parametr `payment: PaymentDetails | null`.
+Když je `null` (platba hotově), e-mail zůstává beze změny.
+
+Když není, textová část dostane blok:
+```
+Platba převodem
+  Číslo účtu:       2000145399/0800
+  IBAN:             CZ65 0800 0000 1920 0014 5399
+  Částka:           182 Kč
+  Variabilní symbol: 2610
+
+QR kód pro platbu je v příloze tohoto e-mailu.
+```
+
+HTML část odkazuje QR přes `<img src="cid:qr@silentagro" alt="QR kód pro platbu 182 Kč" width="220">`
+a příloha se přidá jako
+```ts
+attachments: [{ filename: 'qr-platba.png', content: qrPng, contentType: 'image/png', cid: 'qr@silentagro' }]
+```
+
+Údaje jsou v textu **slovy i v QR**. Kdo má v klientovi vypnuté obrázky nebo čte prostý
+text, musí zaplatit stejně snadno — QR je zkratka, ne jediná cesta.
+
+- [ ] **Step 6: Zapojit do stránky potvrzení**
+
+`PaymentBlock` na `/rezervace/[token]`: vlevo QR jako `data:` URI (`renderQrDataUrl`
+na serveru, žádný klientský JS), vpravo tabulka čísla účtu, IBANu, částky a variabilního
+symbolu, každý údaj v `<code>` s tlačítkem „zkopírovat“.
+
+Při `Hotově při převzetí` se blok nevykreslí vůbec.
+
+- [ ] **Step 7: Testy šablony s platbou**
+
+```ts
+it('e-mail s převodem nese QR přílohu i údaje v textu', async () => {
+  const mail = await renderCustomerConfirmation(orderQr, url, paymentDetails)
+  expect(mail.attachments?.[0]?.cid).toBe('qr@silentagro')
+  expect(mail.attachments?.[0]?.contentType).toBe('image/png')
+  expect(mail.text).toContain('2000145399/0800')
+  expect(mail.text).toContain('Variabilní symbol: 2610')
+  expect(mail.html).toContain('cid:qr@silentagro')
+})
+
+it('e-mail při platbě hotově QR neobsahuje', async () => {
+  const mail = await renderCustomerConfirmation(orderCash, url, null)
+  expect(mail.attachments ?? []).toHaveLength(0)
+  expect(mail.text).not.toContain('Variabilní symbol')
+})
+```
+
+- [ ] **Step 8: Rozšířit E2E (Task 24)**
+
+```ts
+test('při QR platbě se na potvrzení zobrazí kód i číslo účtu', async ({ page }) => {
+  await reserveWithPayment(page, 'QR platba')
+  await expect(page.getByRole('img', { name: /QR kód pro platbu/ })).toBeVisible()
+  await expect(page.getByText('2000145399/0800')).toBeVisible()
+  await expect(page.getByText(/Variabilní symbol/)).toBeVisible()
+})
+
+test('při platbě hotově se QR nezobrazí', async ({ page }) => {
+  await reserveWithPayment(page, 'Hotově při převzetí')
+  await expect(page.getByRole('img', { name: /QR kód/ })).toHaveCount(0)
+})
+```
+
+- [ ] **Step 9: Commit a push**
+
+```bash
+npx vitest run tests/unit && npm run typecheck
+git add -A
+git commit -m "feat(platba): QR kod dle SPAYD do e-mailu i na stranku potvrzeni"
+git push
+```
+
+---
+
+## Aktualizované pořadí
+
+Task 25 patří hned za Task 9 (mail) a před Task 10 (kontejner).
+Task 26 patří za Task 20 (stránka potvrzení), protože do ní zasahuje; jeho doménová část
+(`Iban`, `buildSpayd`) se ale dá udělat kdykoli po Tasku 3.
