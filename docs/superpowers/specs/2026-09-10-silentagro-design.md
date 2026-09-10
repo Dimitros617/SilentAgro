@@ -74,7 +74,7 @@ ostatní vrstvy leží vedle nich.
 ### Use-cases (application/use-cases)
 
 Veřejné: `ListVarieties`, `GetStockOverview`, `ListNews`, `ReserveOrder`, `GetOrderByCode`
-Admin: `ListOrders`, `AdvanceOrderStatus`, `UpsertVariety`, `DeactivateVariety`, `PublishNews`, `DeleteNews`
+Admin: `ListOrders`, `AdvanceOrderStatus`, `SetOrderPaid`, `UpsertVariety`, `DeactivateVariety`, `PublishNews`, `DeleteNews`, `GetAdminOverview`
 Auth: `RegisterUser`, `LoginUser`, `GetCurrentUser`
 
 ## 4. Datový model (MySQL)
@@ -83,7 +83,7 @@ Auth: `RegisterUser`, `LoginUser`, `GetCurrentUser`
 |---|---|---|
 | `users` | `id`, `email` UNIQUE, `password_hash`, `name`, `role` ENUM(CUSTOMER,FARMER), `created_at` | |
 | `varieties` | `id`, `slug` UNIQUE, `name`, `tag`, `description`, `color_hex`, `price_per_kg_czk` DECIMAL(10,2), `stock_kg` DECIMAL(10,2), `capacity_kg` DECIMAL(10,2), `sort_order`, `is_active`, timestamps | `stock_kg` je jediný zdroj pravdy o skladu |
-| `orders` | `id`, `code` UNIQUE, `public_token` UNIQUE, `customer_name`, `customer_email`, `customer_phone`, `note`, `delivery_method` ENUM, `payment_method` ENUM, `subtotal_czk`, `delivery_fee_czk`, `total_czk`, `status` ENUM(NEW,READY,COLLECTED), `user_id` FK NULL, `created_at` | `user_id` NULL = host bez účtu; dvě identity — viz níž |
+| `orders` | `id`, `code` UNIQUE, `public_token` UNIQUE, `customer_name`, `customer_email`, `customer_phone`, `note`, `delivery_method` ENUM, `payment_method` ENUM, `subtotal_czk`, `delivery_fee_czk`, `total_czk`, `status` ENUM(NEW,READY,COLLECTED), `paid_at` DATETIME NULL, `user_id` FK NULL, `created_at` | `user_id` NULL = host bez účtu; dvě identity — viz níž; `paid_at` = kdy farmář platbu odškrtl |
 | `order_items` | `id`, `order_id` FK CASCADE, `variety_id` FK RESTRICT, `variety_name`, `unit_price_czk`, `quantity_kg`, `line_total_czk` | `variety_name` a `unit_price_czk` jsou **snapshoty** |
 | `news_posts` | `id`, `title`, `body`, `tag` ENUM(HARVEST,STORAGE,FIELD), `image_url` NULL, `published_at`, `author_id` FK | |
 | `fields` | `id`, `name`, `variety_name`, `area_m2`, `status` ENUM(GROWING,HARVESTING,HARVESTED), `yield_kg`, `is_estimate` | mapa polí |
@@ -155,14 +155,21 @@ Farma inkasuje převodem. Když si zákazník zvolí platbu `QR platba` nebo `P�
 aplikace mu vygeneruje český QR kód podle standardu **SPAYD** (Short Payment Descriptor, ČBA).
 
 ```
-SPD*1.0*ACC:CZ6508000000192000145399*AM:182.00*CC:CZK*X-VS:2610*MSG:SilentAgro rezervace 2610
+SPD*1.0*ACC:CZ6508000000192000145399*AM:182.00*CC:CZK*X-VS:2610*MSG:Agro:2610
 ```
 
 - `ACC` — IBAN z `BANK_ACCOUNT_IBAN`, bez mezer
 - `AM` — celková částka na dvě desetinná místa
 - `CC` — vždy `CZK`
 - `X-VS` — variabilní symbol = číselná část kódu objednávky (`#2610` → `2610`)
-- `MSG` — zpráva pro příjemce, max 60 znaků, bez diakritiky (banky ji jinak komolí)
+- `MSG` — **zpráva pro příjemce ve tvaru `Agro:<číslo objednávky>`**, tedy `Agro:2610`.
+  Krátká, bez diakritiky, bez mezer — banky delší zprávy komolí a farmář podle ní páruje
+  platbu s objednávkou i tehdy, když zákazník zapomene variabilní symbol.
+
+**Zákazník platící ručním převodem musí dostat stejnou instrukci slovy.** Na stránce
+potvrzení i v e-mailu proto stojí věta: „Do zprávy pro příjemce prosím napište
+`Agro:2610` — podle ní platbu spárujeme.“ Kdo QR nenačte a vyplní příkaz ručně, jinak
+odešle platbu bez jakéhokoli identifikátoru.
 
 Kód se generuje **jednou v aplikaci**, ne přes externí službu — poslat částku a číslo účtu
 zákazníka na cizí API kvůli obrázku je zbytečný únik dat i závislost na cizí dostupnosti.
@@ -175,6 +182,20 @@ Zobrazuje se na dvou místech:
   e-mailu obsahuje stejné údaje slovy, aby platba šla i bez načtení obrázků.
 
 Při platbě `Hotově při převzetí` se QR negeneruje ani nezobrazuje.
+
+### Označení objednávky jako zaplacené
+
+Farma nemá napojení na bankovní API, takže platbu potvrzuje člověk. V administraci má
+proto každý řádek objednávky **zaškrtávátko „Zaplaceno“**. Zaškrtnutí zapíše
+`orders.paid_at = NOW()`, odškrtnutí ho vrátí na `NULL`.
+
+`paid_at` je záměrně čas, ne booleovská hodnota: farmář se potřebuje podívat, kdy platba
+dorazila, a `NULL` versus datum nese obojí — příznak i časové razítko — v jednom sloupci.
+
+Stav zaplacení je **nezávislý na `status`**. Objednávka může být `Vydána` a nezaplacená
+(platba hotově, kterou farmář zapomněl odškrtnout) i `Nová` a zaplacená (zákazník poslal
+peníze hned po rezervaci). Míchat je do jednoho výčtu by znamenalo šest kombinací tam,
+kde stačí dva nezávislé údaje.
 
 Nové proměnné prostředí:
 

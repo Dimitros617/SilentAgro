@@ -3872,3 +3872,370 @@ git push
 Task 25 patří hned za Task 9 (mail) a před Task 10 (kontejner).
 Task 26 patří za Task 20 (stránka potvrzení), protože do ní zasahuje; jeho doménová část
 (`Iban`, `buildSpayd`) se ale dá udělat kdykoli po Tasku 3.
+
+---
+
+## Dodatek B — zpráva pro příjemce, instrukce k převodu, příznak zaplaceno
+
+Tři upřesnění, která přišla po sepsání dodatku A. Mění tasky 2, 4, 5, 14, 21, 24 a 26.
+Kdo dělá kterýkoli z nich, musí si přečíst i tento dodatek.
+
+### Změny v existujících tascích
+
+**Task 2 — `orders` dostává sloupec `paid_at`:**
+
+```prisma
+model Order {
+  // ... vše dosavadní ...
+  paidAt DateTime? @map("paid_at")
+
+  @@index([status, createdAt])
+  @@index([paidAt])
+  @@map("orders")
+}
+```
+
+`DateTime?` místo `Boolean`: farmář potřebuje vědět nejen *že* je zaplaceno, ale i *kdy*.
+Dva sloupce (`is_paid` + `paid_at`) by šly rozejít — příznak `true` s prázdným datem.
+
+**Task 4 — `Order` dostává `paidAt`:**
+
+```ts
+export interface OrderProps {
+  // ... vše dosavadní ...
+  paidAt: Date | null
+}
+export class Order {
+  readonly paidAt: Date | null
+  get isPaid(): boolean          // paidAt !== null
+  withPaidAt(paidAt: Date | null): Order
+}
+```
+
+**Task 5 — `OrderRepository` dostává metodu:**
+
+```ts
+setPaid(id: number, paidAt: Date | null): Promise<Order>
+```
+
+**Task 14 — `OrderRowView` dostává dvě pole a přibývá use-case:**
+
+```ts
+export interface OrderRowView {
+  // ... vše dosavadní ...
+  isPaid: boolean
+  paidAtLabel: string | null      // "10. září 2026" nebo null
+}
+
+export class SetOrderPaid {
+  constructor(deps: { uow: UnitOfWork; clock: Clock })
+  execute(orderId: number, paid: boolean): Promise<{ isPaid: boolean; paidAtLabel: string | null }>
+}
+```
+
+**Task 15 — přibývá server action:**
+
+```ts
+export async function setOrderPaidAction(id: number, paid: boolean): Promise<Result<{ isPaid: boolean; paidAtLabel: string | null }>>
+```
+
+Jako každá admin action začíná `await requireFarmer()`.
+
+---
+
+### Task 27: Zpráva pro příjemce a instrukce k ručnímu převodu
+
+**Files:**
+- Modify: `src/infrastructure/payment/spayd.ts` — `buildPaymentDetails` skládá `Agro:<VS>`
+- Modify: `src/infrastructure/mail/templates.ts` — instrukční věta v textu i HTML
+- Modify: `src/components/cart/payment-block.tsx` — instrukční věta na stránce
+- Test: rozšířit `tests/unit/payment/spayd.test.ts`, `tests/unit/mail/templates.test.ts`
+
+**Interfaces:**
+- Consumes: `buildSpayd`, `PaymentDetails` (Task 26), `Order` (Task 4)
+- Produces:
+  ```ts
+  export interface PaymentDetails {
+    accountNumber: string; iban: string; ibanFormatted: string
+    amountLabel: string; variableSymbol: string
+    recipientMessage: string          // "Agro:2610" — přesně to, co má zákazník napsat
+    instruction: string               // celá věta pro zákazníka, stejná v mailu i na webu
+    spayd: string
+  }
+  export function buildRecipientMessage(orderCode: string): string   // "#2610" → "Agro:2610"
+  export const TRANSFER_INSTRUCTION_TEMPLATE: string
+  ```
+
+- [ ] **Step 1: Napsat padající testy**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { buildRecipientMessage, buildPaymentDetails } from '@/infrastructure/payment/spayd'
+
+describe('buildRecipientMessage', () => {
+  it('složí zprávu ve tvaru Agro:cislo', () => {
+    expect(buildRecipientMessage('#2610')).toBe('Agro:2610')
+  })
+
+  it('odstraní mřížku i jiné nečíselné znaky', () => {
+    expect(buildRecipientMessage('2611')).toBe('Agro:2611')
+    expect(buildRecipientMessage('# 2612 ')).toBe('Agro:2612')
+  })
+})
+
+describe('buildPaymentDetails', () => {
+  it('vloží zprávu pro příjemce do SPAYD i do instrukce', () => {
+    const details = buildPaymentDetails(orderQr, bank)
+    expect(details.recipientMessage).toBe('Agro:2610')
+    expect(details.spayd).toContain('*MSG:Agro:2610')
+    expect(details.instruction).toContain('Agro:2610')
+    expect(details.instruction).toContain('2000145399/0800')
+    expect(details.instruction).toContain('2610')      // variabilní symbol
+  })
+
+  it('dvojtečka ve zprávě přežije, hvězdička ne', () => {
+    // ':' je v SPAYD běžný uvnitř hodnoty, oddělovač polí je '*'
+    expect(buildPaymentDetails(orderQr, bank).spayd.split('*').filter((p) => p.startsWith('MSG:')))
+      .toEqual(['MSG:Agro:2610'])
+  })
+})
+```
+
+Druhý test je tu proto, že `Agro:2610` obsahuje dvojtečku. V SPAYD odděluje klíč od hodnoty
+právě dvojtečka, takže `MSG:Agro:2610` má **dvě** dvojtečky. Standard to dovoluje — dělí se
+na první výskyt — ale naivní parser (i ten náš, kdyby se psal) by to rozbil. Test to zafixuje.
+
+- [ ] **Step 2: Spustit, ověřit pád**
+
+Run: `npx vitest run tests/unit/payment`
+Expected: FAIL
+
+- [ ] **Step 3: Implementovat**
+
+```ts
+export const buildRecipientMessage = (orderCode: string): string =>
+  `Agro:${orderCode.replace(/\D/g, '')}`
+
+export const TRANSFER_INSTRUCTION_TEMPLATE =
+  'Částku {amount} pošlete na účet {account}, variabilní symbol {vs}. ' +
+  'Do zprávy pro příjemce prosím napište {message} — podle ní platbu spárujeme. ' +
+  'Peníze čekáme do 5 dnů, do té doby brambory držíme.'
+```
+
+`instruction` vzniká dosazením do šablony. Jedna definice pro e-mail i web — kdyby si obě
+místa formulovala větu zvlášť, časem se rozejdou a zákazník dostane dvě různá zadání.
+
+- [ ] **Step 4: Zapojit do e-mailu**
+
+Textová část potvrzení dostane pod výpis údajů odstavec `details.instruction`.
+HTML část totéž, se zvýrazněnou zprávou v `<strong><code>Agro:2610</code></strong>`.
+
+Rozšířit test z Tasku 26:
+```ts
+it('e-mail nese instrukci ke zprávě pro příjemce', async () => {
+  const mail = await renderCustomerConfirmation(orderQr, url, paymentDetails)
+  expect(mail.text).toContain('Do zprávy pro příjemce prosím napište Agro:2610')
+  expect(mail.html).toContain('Agro:2610')
+})
+```
+
+- [ ] **Step 5: Zapojit do stránky potvrzení**
+
+`PaymentBlock` pod tabulkou údajů vypíše `details.instruction` a řádek „Zpráva pro příjemce“
+s hodnotou `Agro:2610` a tlačítkem „zkopírovat“, stejně jako u čísla účtu a VS.
+
+- [ ] **Step 6: Spustit testy, commit a push**
+
+```bash
+npx vitest run tests/unit
+git add -A
+git commit -m "feat(platba): zprava pro prijemce Agro:cislo a instrukce k prevodu"
+git push
+```
+
+---
+
+### Task 28: Příznak zaplaceno v administraci
+
+**Files:**
+- Modify: `prisma/schema.prisma` — `paidAt` (viz změny výše), nová migrace
+- Modify: `src/domain/entities/order.ts`, `src/domain/ports/repositories.ts`
+- Modify: `src/infrastructure/persistence/prisma/repositories.ts`, `mappers.ts`
+- Create: `src/application/use-cases/set-order-paid.ts`
+- Modify: `src/application/use-cases/list-orders.ts`, `get-admin-overview.ts`
+- Modify: `src/app/actions/admin-orders.ts`
+- Modify: `src/components/admin/orders-table.tsx`
+- Test: `tests/unit/application/set-order-paid.test.ts`, rozšířit `tests/integration/repositories.test.ts`
+
+**Interfaces:**
+- Consumes: `OrderRepository.setPaid`, `Clock`, `UnitOfWork`
+- Produces: `SetOrderPaid`, `setOrderPaidAction` (signatury viz změny výše)
+
+- [ ] **Step 1: Vygenerovat migraci**
+
+Run: `npm run db:migrate -- --name order_paid_at`
+Expected: `ALTER TABLE orders ADD COLUMN paid_at DATETIME NULL` + index
+
+Migrace je aditivní a sloupec je nullable, takže existující objednávky zůstanou nezaplacené —
+což je správný výchozí stav, ne domněnka.
+
+- [ ] **Step 2: Napsat padající testy**
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { SetOrderPaid } from '@/application/use-cases/set-order-paid'
+import { NotFoundError } from '@/domain/errors'
+
+const clock = { now: () => new Date('2026-09-10T18:30:00Z') }
+
+describe('SetOrderPaid', () => {
+  it('zaškrtnutí zapíše čas z hodin', async () => {
+    const ctx = makeAdminContext({ orders: [orderWith(OrderStatus.NEW)] })
+    const result = await new SetOrderPaid({ uow: ctx.uow, clock }).execute(1, true)
+    expect(result.isPaid).toBe(true)
+    expect(result.paidAtLabel).toBe('10. září 2026')
+    expect(ctx.orders.get(1)?.paidAt).toEqual(new Date('2026-09-10T18:30:00Z'))
+  })
+
+  it('odškrtnutí čas smaže', async () => {
+    const ctx = makeAdminContext({ orders: [orderPaidAt(new Date('2026-09-01T10:00:00Z'))] })
+    const result = await new SetOrderPaid({ uow: ctx.uow, clock }).execute(1, false)
+    expect(result.isPaid).toBe(false)
+    expect(result.paidAtLabel).toBeNull()
+    expect(ctx.orders.get(1)?.paidAt).toBeNull()
+  })
+
+  it('opakované zaškrtnutí čas nepřepíše', async () => {
+    const original = new Date('2026-09-01T10:00:00Z')
+    const ctx = makeAdminContext({ orders: [orderPaidAt(original)] })
+    await new SetOrderPaid({ uow: ctx.uow, clock }).execute(1, true)
+    expect(ctx.orders.get(1)?.paidAt).toEqual(original)
+  })
+
+  it('neexistující objednávka skončí NotFoundError', async () => {
+    const ctx = makeAdminContext({ orders: [] })
+    await expect(new SetOrderPaid({ uow: ctx.uow, clock }).execute(999, true)).rejects.toThrow(NotFoundError)
+  })
+
+  it('zaplacení nemění stav objednávky', async () => {
+    const ctx = makeAdminContext({ orders: [orderWith(OrderStatus.NEW)] })
+    await new SetOrderPaid({ uow: ctx.uow, clock }).execute(1, true)
+    expect(ctx.orders.get(1)?.status).toBe(OrderStatus.NEW)
+  })
+})
+```
+
+Třetí test je podstatný: dvojklik na zaškrtávátko nebo dva otevřené taby nesmí posunout
+datum platby na dnešek. Idempotence tady není kosmetika — farmář by přišel o informaci,
+kdy peníze skutečně dorazily.
+
+- [ ] **Step 3: Spustit, ověřit pád, implementovat, spustit znovu**
+
+```ts
+async execute(orderId: number, paid: boolean) {
+  return this.deps.uow.runInTransaction(async (repos) => {
+    const order = await repos.orders.findById(orderId)
+    if (!order) throw new NotFoundError('Objednávka')
+
+    // idempotence: už zaplacenou objednávku znovu neoznačujeme
+    if (paid && order.isPaid) {
+      return { isPaid: true, paidAtLabel: formatDateCs(order.paidAt) }
+    }
+
+    const updated = await repos.orders.setPaid(orderId, paid ? this.deps.clock.now() : null)
+    return {
+      isPaid: updated.isPaid,
+      paidAtLabel: updated.paidAt ? formatDateCs(updated.paidAt) : null,
+    }
+  })
+}
+```
+
+- [ ] **Step 4: UI v tabulce objednávek**
+
+Řádek objednávky dostane šestý sloupec. Zaškrtávátko je `<input type="checkbox">` uvnitř
+`<label>` s textem „Zaplaceno“, aby šlo kliknout i na popisek a aby ho odečítač obrazovky
+přečetl. Pod ním, když je zaplaceno, drobným písmem datum.
+
+```tsx
+<label className={styles.paid}>
+  <input
+    type="checkbox"
+    checked={optimisticPaid}
+    disabled={pending}
+    onChange={(e) => startTransition(async () => {
+      setOptimisticPaid(e.target.checked)
+      const result = await setOrderPaidAction(order.id, e.target.checked)
+      if (!result.ok) {
+        setOptimisticPaid(!e.target.checked)   // vrátit zpět, server nepotvrdil
+        toast.show(result.error)
+      }
+    })}
+  />
+  <span>Zaplaceno</span>
+</label>
+{optimisticPaid && paidAtLabel ? <small>{paidAtLabel}</small> : null}
+```
+
+Optimistický stav se při chybě vrací zpět. Bez toho by zaškrtávátko ukazovalo „zaplaceno“
+i tehdy, když zápis do databáze selhal — a farmář by vydal brambory za nic.
+
+- [ ] **Step 5: KPI „Nezaplacené převodem“ v přehledu**
+
+`GetAdminOverview` přidá pátou kartu: počet objednávek s platbou převodem nebo QR,
+které nemají `paid_at` a nejsou starší než 30 dní. To je přesně seznam, který farmář
+každé ráno potřebuje projít.
+
+- [ ] **Step 6: Integrační test sloupce**
+
+```ts
+it('paid_at přežije uložení a načtení', async () => {
+  const order = await repo.create(sampleOrderInput)
+  expect(order.isPaid).toBe(false)
+  const paid = await repo.setPaid(order.id, new Date('2026-09-10T18:30:00Z'))
+  expect(paid.paidAt?.toISOString()).toBe('2026-09-10T18:30:00.000Z')
+  const unpaid = await repo.setPaid(order.id, null)
+  expect(unpaid.paidAt).toBeNull()
+})
+```
+
+- [ ] **Step 7: E2E**
+
+```ts
+test('farmář označí objednávku jako zaplacenou a označení přežije obnovení stránky', async ({ page }) => {
+  await loginAsFarmer(page)
+  await page.goto('/admin/objednavky')
+  const row = page.getByRole('row').filter({ hasText: '#2609' })
+  await row.getByLabel('Zaplaceno').check()
+  await expect(row.getByLabel('Zaplaceno')).toBeChecked()
+
+  await page.reload()
+  await expect(page.getByRole('row').filter({ hasText: '#2609' }).getByLabel('Zaplaceno')).toBeChecked()
+})
+```
+
+Kontrola po `reload()` je tam schválně — zaškrtávátko, které si stav drží jen v paměti
+prohlížeče, by test bez ní prošel.
+
+- [ ] **Step 8: Commit a push**
+
+```bash
+npx vitest run tests/unit && npm run test:integration && npm run typecheck
+git add -A
+git commit -m "feat(admin): oznaceni objednavky jako zaplacene s casovym razitkem"
+git push
+```
+
+---
+
+## Aktualizované pořadí (po dodatcích A a B)
+
+- Task 25 (mailové drivery) patří za Task 9, před Task 10.
+- Task 26 (QR platba) — doménová část (`Iban`, `buildSpayd`) kdykoli po Tasku 3;
+  napojení na e-mail a stránku až po Tasku 20.
+- Task 27 (zpráva pro příjemce) navazuje přímo na Task 26.
+- Task 28 (příznak zaplaceno) sahá do schématu, takže migrace patří k Tasku 2,
+  ale zbytek se dělá až po Tasku 21 (administrace).
+
+Kdo staví od nuly, může sloupec `paid_at` zahrnout rovnou do úvodní migrace v Tasku 2
+a Task 28 pak začne krokem 2. Samostatná migrace má smysl jen tehdy, když už aplikace běží.
