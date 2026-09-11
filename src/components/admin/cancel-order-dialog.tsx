@@ -39,7 +39,7 @@ export function CancelOrderDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="modal"
+      className="modal modal--wide"
       aria-labelledby="cancel-dialog-title"
       onClose={onClose}
       onClick={(event) => {
@@ -82,7 +82,7 @@ export function CancelOrderDialog({
           <button
             type="button"
             className="btn btn--ghost"
-            style={{ flex: 1 }}
+            style={{ flex: 1, whiteSpace: 'nowrap' }}
             onClick={onClose}
             disabled={pending}
           >
@@ -91,11 +91,12 @@ export function CancelOrderDialog({
           <button
             type="button"
             className="btn btn--primary"
-            style={{ flex: 1, background: 'var(--clay)' }}
+            style={{ flex: 1, background: 'var(--clay)', whiteSpace: 'nowrap' }}
             onClick={() => onConfirm(reason)}
             disabled={pending || reason.trim().length === 0}
           >
-            {pending ? 'Ruším…' : 'Zrušit a odeslat e-mail'}
+            {/* Krátký popisek: že zákazníkovi odejde e-mail, říká text nad formulářem. */}
+            {pending ? 'Ruším…' : 'Zrušit rezervaci'}
           </button>
         </div>
       </div>

@@ -121,7 +121,7 @@ test('farmář zruší objednávku, sklad se vrátí a zákazník dostane e-mail
   await row.getByRole('button', { name: 'Zrušit' }).click()
 
   await page.getByLabel('Důvod zrušení').fill('Kroupy zničily úrodu, omlouváme se.')
-  await page.getByRole('button', { name: 'Zrušit a odeslat e-mail' }).click()
+  await page.getByRole('button', { name: 'Zrušit rezervaci', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('zrušena')
 
   // Sklad je zpátky na původní hodnotě
@@ -143,6 +143,6 @@ test('zrušení bez důvodu nejde potvrdit', async ({ page }) => {
   const row = page.locator('.orders-row').filter({ hasNot: page.getByText('Zrušeno') }).first()
   await row.getByRole('button', { name: 'Zrušit' }).click()
 
-  await expect(page.getByRole('button', { name: 'Zrušit a odeslat e-mail' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Zrušit rezervaci', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Zpět' }).click()
 })

@@ -1132,6 +1132,14 @@
   color: inherit;
 }
 
+/*
+ * Širší varianta pro dialogy s formulářem a dvěma akcemi vedle sebe. Na 430 px
+ * se popisky tlačítek lámaly do tří řádků.
+ */
+.modal--wide {
+  width: min(520px, calc(100vw - 40px));
+}
+
 .modal::backdrop {
   background: rgba(20, 32, 26, 0.55);
 }
