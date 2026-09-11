@@ -94,3 +94,55 @@ test('farmář se odhlásí a administrace mu zmizí', async ({ page }) => {
   await page.goto('/admin')
   await expect(page).toHaveURL(/prihlaseni=vyzadovano/)
 })
+
+test('farmář zruší objednávku, sklad se vrátí a zákazník dostane e-mail', async ({ page }) => {
+  // Vlastní objednávka, aby test nezávisel na tom, co zbylo po jiných scénářích.
+  const email = `zruseni-${Date.now()}@email.cz`
+
+  await page.goto('/burza')
+  const stockBefore = await page.getByTestId('stock-bernie').innerText()
+
+  const card = page.getByRole('article', { name: 'Bernie' })
+  await card.getByLabel('Množství Bernie v kilogramech').fill('1')
+  await card.getByRole('button', { name: 'Rezervovat' }).click()
+
+  await page.goto('/kosik')
+  await page.getByLabel('Jméno a příjmení').fill('Zrušený Zákazník')
+  await page.getByLabel('E-mail (sem přijde potvrzení)').fill(email)
+  await page.getByRole('button', { name: 'Hotově při převzetí' }).click()
+  await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
+  await expect(page).toHaveURL(/\/rezervace\//)
+
+  const code = (await page.getByRole('heading', { name: /Rezervace #\d+ přijata/ }).innerText())
+    .match(/#\d+/)?.[0] as string
+
+  await page.goto('/admin/objednavky')
+  const row = page.locator('.orders-row').filter({ hasText: code })
+  await row.getByRole('button', { name: 'Zrušit' }).click()
+
+  await page.getByLabel('Důvod zrušení').fill('Kroupy zničily úrodu, omlouváme se.')
+  await page.getByRole('button', { name: 'Zrušit a odeslat e-mail' }).click()
+  await expect(page.getByRole('status')).toContainText('zrušena')
+
+  // Sklad je zpátky na původní hodnotě
+  await page.goto('/burza')
+  await expect(page.getByTestId('stock-bernie')).toHaveText(stockBefore)
+
+  // Zrušená objednávka se v administraci pozná a nejde s ní dál pracovat
+  await page.goto('/admin/objednavky')
+  const cancelled = page.locator('.orders-row').filter({ hasText: code })
+  await expect(cancelled.getByText('Zrušeno').first()).toBeVisible()
+  await expect(cancelled.getByText('Kroupy zničily úrodu')).toBeVisible()
+  await expect(cancelled.getByRole('button', { name: 'Zrušit' })).toHaveCount(0)
+  await expect(cancelled.locator('.status-btn')).toBeDisabled()
+})
+
+test('zrušení bez důvodu nejde potvrdit', async ({ page }) => {
+  await page.goto('/admin/objednavky')
+
+  const row = page.locator('.orders-row').filter({ hasNot: page.getByText('Zrušeno') }).first()
+  await row.getByRole('button', { name: 'Zrušit' }).click()
+
+  await expect(page.getByRole('button', { name: 'Zrušit a odeslat e-mail' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Zpět' }).click()
+})

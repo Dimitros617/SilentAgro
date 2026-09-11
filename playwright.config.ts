@@ -40,7 +40,7 @@ export default defineConfig({
 
     {
       name: 'farmar',
-      testMatch: /admin\.spec\.ts/,
+      testMatch: /(admin|uzivatele)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], storageState: FARMER_STATE },
       dependencies: ['prihlaseni'],
     },

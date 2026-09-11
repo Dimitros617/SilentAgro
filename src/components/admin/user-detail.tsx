@@ -10,6 +10,7 @@ import {
 } from '@/app/actions/admin'
 import type { UserDetailView } from '@/application/dto'
 import { useToast } from '@/components/layout/toast'
+import { OrdersTable } from './orders-table'
 
 export function UserDetail({ initial }: { initial: UserDetailView }) {
   const [user, setUser] = useState(initial)
@@ -221,49 +222,14 @@ export function UserDetail({ initial }: { initial: UserDetailView }) {
         </section>
       </div>
 
-      <section className="card card--flush">
-        <h2 className="display h3" style={{ padding: '14px 0 4px' }}>
-          Objednávky
-        </h2>
-
-        {user.orders.length === 0 ? (
-          <p className="muted" style={{ padding: '12px 0 20px' }}>
-            Zatím nic neobjednal.
-          </p>
-        ) : (
-          user.orders.map((order) => (
-            <div key={order.id} className="users-order-row">
-              <span className="orders-row__code">{order.code}</span>
-              <div style={{ fontSize: 14, color: 'var(--muted-strong)' }}>
-                {order.itemsLabel}
-                <div className="muted">
-                  {order.createdAtLabel} · {order.deliveryLabel} · {order.paymentLabel}
-                </div>
-                {order.isCancelled && order.cancellationReason ? (
-                  <div style={{ marginTop: 4, fontSize: 13, color: 'var(--clay)' }}>
-                    Zrušeno {order.cancelledAtLabel}: {order.cancellationReason}
-                  </div>
-                ) : null}
-              </div>
-              <span className="display" style={{ fontWeight: 700 }}>
-                {order.totalLabel}
-              </span>
-              <div className="row" style={{ gap: 6 }}>
-                {order.isCancelled ? (
-                  <span
-                    className="badge"
-                    style={{ background: 'var(--tint-clay)', color: 'var(--clay)' }}
-                  >
-                    Zrušeno
-                  </span>
-                ) : (
-                  <span className="badge badge--muted">{order.statusLabel}</span>
-                )}
-                {order.isPaid ? <span className="badge badge--green">Zaplaceno</span> : null}
-              </div>
-            </div>
-          ))
-        )}
+      <section className="stack" style={{ gap: 10 }}>
+        <h2 className="display h3">Objednávky</h2>
+        {/*
+          Tatáž tabulka jako v záložce Objednávky, jen omezená na tohoto zákazníka.
+          Farmář tak má i z profilu k dispozici stejné operace — posun stavu,
+          označení platby i zrušení — místo aby musel přepínat jinam a hledat řádek.
+        */}
+        <OrdersTable orders={user.orders} />
       </section>
     </div>
   )

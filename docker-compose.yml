@@ -77,6 +77,9 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       UPLOAD_DIR: /app/public/uploads
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      RATE_LIMIT_LOGIN_PER_15MIN: ${RATE_LIMIT_LOGIN_PER_15MIN:-5}
+      RATE_LIMIT_REGISTER_PER_HOUR: ${RATE_LIMIT_REGISTER_PER_HOUR:-3}
+      RATE_LIMIT_ORDERS_PER_HOUR: ${RATE_LIMIT_ORDERS_PER_HOUR:-10}
     ports:
       # Vazba na 127.0.0.1 schválně. Bez prefixu Docker obejde firewall hostitele
       # a aplikace visí na všech rozhraních.

@@ -17,16 +17,25 @@ test('přesměrování z administrace otevře přihlašovací okno', async ({ pa
   await expect(page.getByRole('dialog')).toBeVisible()
 })
 
-test('špatné heslo farmáře nepustí dál', async ({ page }) => {
+test('špatné přihlašovací údaje nepustí dál', async ({ page }) => {
+  /*
+   * Pokaždé jiná adresa. Aplikace omezuje pokusy na účet (pět za čtvrt hodiny)
+   * a opakované spuštění sady na jedné adrese by narazilo na limit — tedy na
+   * ochranu, která funguje, ne na chybu.
+   *
+   * Že *existující* účet se špatným heslem hlásí totéž co neznámý e-mail,
+   * ověřuje unit test; ten se o rate limit opřít nemůže.
+   */
+  const email = `neznamy-${Date.now()}@email.cz`
+
   await page.goto('/')
   await page.getByRole('button', { name: 'Přihlásit' }).click()
 
   const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('E-mail').fill('farma@silentagro.cz')
+  await dialog.getByLabel('E-mail').fill(email)
   await dialog.getByLabel('Heslo').fill('rozhodne-spatne-heslo')
   await dialog.getByRole('button', { name: 'Přihlásit se' }).click()
 
-  // Stejná hláška jako u neexistujícího účtu — jinak by šlo vyjmenovat registrované adresy.
   await expect(dialog.getByRole('alert')).toContainText('Nesprávný e-mail nebo heslo')
   await expect(page.getByRole('link', { name: 'Administrace' })).toHaveCount(0)
 })

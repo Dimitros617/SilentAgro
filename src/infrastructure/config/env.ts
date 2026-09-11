@@ -46,6 +46,15 @@ const schema = z
      * podle IP by šel obejít jedním hlavičkovým polem.
      */
     TRUST_PROXY: booleanFromString,
+
+    /**
+     * Limity jsou politika, ne konstanta v kódu. Produkce si nechá výchozí hodnoty;
+     * testovací sestava je zvedne, aby šlo sadu pustit vícekrát za sebou — jinak by
+     * druhý běh narazil na ochranu, která dělá přesně to, co má.
+     */
+    RATE_LIMIT_LOGIN_PER_15MIN: z.coerce.number().int().positive().default(5),
+    RATE_LIMIT_REGISTER_PER_HOUR: z.coerce.number().int().positive().default(3),
+    RATE_LIMIT_ORDERS_PER_HOUR: z.coerce.number().int().positive().default(10),
   })
   .superRefine((value, ctx) => {
     if (value.APP_ENV === 'production' && value.MAIL_DRIVER === 'memory') {

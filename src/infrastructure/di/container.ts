@@ -98,10 +98,22 @@ function build(): Container {
       trustProxy: env.TRUST_PROXY,
     },
     limiters: {
-      // 5 pokusů, plná kapacita zpět za 15 minut
-      login: new TokenBucket(5, 5 / (15 * 60), systemClock),
-      register: new TokenBucket(3, 3 / (60 * 60), systemClock),
-      order: new TokenBucket(10, 10 / (60 * 60), systemClock),
+      // Kapacita se plně doplní za uvedené okno.
+      login: new TokenBucket(
+        env.RATE_LIMIT_LOGIN_PER_15MIN,
+        env.RATE_LIMIT_LOGIN_PER_15MIN / (15 * 60),
+        systemClock,
+      ),
+      register: new TokenBucket(
+        env.RATE_LIMIT_REGISTER_PER_HOUR,
+        env.RATE_LIMIT_REGISTER_PER_HOUR / 3600,
+        systemClock,
+      ),
+      order: new TokenBucket(
+        env.RATE_LIMIT_ORDERS_PER_HOUR,
+        env.RATE_LIMIT_ORDERS_PER_HOUR / 3600,
+        systemClock,
+      ),
     },
   }
 }

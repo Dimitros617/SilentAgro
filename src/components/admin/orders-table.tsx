@@ -11,6 +11,25 @@ import { useToast } from '@/components/layout/toast'
 import { OrderStatus } from '@/domain/enums'
 import { CancelOrderDialog } from './cancel-order-dialog'
 
+/** Inline SVG, ne ikonová knihovna — jedna ikona nestojí za další závislost. */
+function TrashIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
 const STATUS_CLASS: Record<OrderStatus, string> = {
   [OrderStatus.NEW]: 'status-btn status-btn--new',
   [OrderStatus.READY]: 'status-btn status-btn--ready',
@@ -138,12 +157,15 @@ function OrderRow({
         {row.isCancelled ? null : (
           <button
             type="button"
-            className="btn btn--ghost"
-            style={{ height: 38, padding: '0 12px', color: 'var(--clay)', borderColor: '#e8d4cd' }}
+            className="icon-btn icon-btn--danger"
             onClick={() => onCancelRequest(row, setRow)}
             disabled={pending}
+            // Jen ikona: se stavem „Připravena“ se dvě textová tlačítka do sloupce nevejdou.
+            // Popisek nese `aria-label` pro odečítač a `title` pro myš.
+            aria-label={`Zrušit rezervaci ${row.code}`}
+            title={`Zrušit rezervaci ${row.code}`}
           >
-            Zrušit
+            <TrashIcon />
           </button>
         )}
       </div>

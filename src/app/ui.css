@@ -931,7 +931,8 @@
 
 .orders-row {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr) minmax(0, 1fr) 110px 130px 130px;
+  /* Poslední sloupec drží stav i ikonu zrušení — s textovým tlačítkem přetékal. */
+  grid-template-columns: 100px minmax(0, 1fr) minmax(0, 1fr) 110px 130px 150px;
   gap: 16px;
   align-items: center;
   padding: 18px 0;
@@ -970,6 +971,35 @@
   border-color: #eeddb0;
   background: var(--tint-gold);
   color: var(--gold-ink);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted-strong);
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn--danger {
+  color: var(--clay);
+  border-color: #e8d4cd;
+}
+
+.icon-btn--danger:not(:disabled):hover {
+  background: var(--tint-clay);
+  border-color: var(--clay);
 }
 
 .paid {
