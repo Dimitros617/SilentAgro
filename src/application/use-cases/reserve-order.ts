@@ -1,14 +1,12 @@
 import { Order, OrderItem } from '@/domain/entities'
 import { DeliveryMethod, type PaymentMethod } from '@/domain/enums'
 import { ValidationError } from '@/domain/errors'
-import type { Clock, Logger, Mailer, TokenGenerator } from '@/domain/ports/services'
+import type { OrderNotifier } from '@/domain/ports/order-presentation'
+import type { Clock, TokenGenerator } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
-import { renderCustomerConfirmation, renderFarmerNotification } from '@/infrastructure/mail/templates'
-import { tryRenderQrPng } from '@/infrastructure/payment/qr-code'
-import { type BankAccount, buildPaymentDetails } from '@/infrastructure/payment/spayd'
 
 export interface ReserveOrderInput {
   readonly customer: {
@@ -30,15 +28,13 @@ export interface ReserveOrderResult {
 
 export interface ReserveOrderDeps {
   readonly uow: UnitOfWork
-  readonly mailer: Mailer
   readonly clock: Clock
   readonly tokenGenerator: TokenGenerator
-  readonly logger: Logger
-  readonly bank: BankAccount
-  readonly config: {
-    readonly farmerEmail: string
-    readonly publicBaseUrl: string
-  }
+  /**
+   * Jediné, co use-case o notifikacích ví. Že se pod tím skládají dva e-maily
+   * a generuje QR kód, je věc infrastruktury.
+   */
+  readonly notifier: OrderNotifier
 }
 
 /**
@@ -105,8 +101,8 @@ export class ReserveOrder {
     })
 
     // Až po commitu. Sklad je pravda, e-mail je notifikace — výpadek SMTP nesmí
-    // zrušit platnou rezervaci.
-    await this.notify(order)
+    // zrušit platnou rezervaci, takže si selhání ošetřuje notifier sám.
+    await this.deps.notifier.notifyOrderPlaced(order)
 
     return { code: order.code, publicToken: order.publicToken }
   }
@@ -143,54 +139,5 @@ export class ReserveOrder {
 
     if (merged.size === 0) throw new ValidationError('Košík je prázdný')
     return merged
-  }
-
-  private async notify(order: Order): Promise<void> {
-    const { publicBaseUrl, farmerEmail } = this.deps.config
-    const payment = buildPaymentDetails(order, this.deps.bank)
-    const qrPng = payment ? await tryRenderQrPng(payment.spayd) : null
-
-    // Každý e-mail zvlášť: když zákazníkova adresa odmítá poštu, farmář se
-    // o objednávce musí dozvědět stejně.
-    await this.trySend(
-      () =>
-        this.deps.mailer.send(
-          renderCustomerConfirmation({
-            order,
-            confirmationUrl: `${publicBaseUrl}/rezervace/${order.publicToken}`,
-            payment,
-            qrPng,
-          }),
-        ),
-      order.code,
-      'zákazníkovi',
-    )
-
-    await this.trySend(
-      () =>
-        this.deps.mailer.send(
-          renderFarmerNotification({
-            order,
-            farmerEmail,
-            adminUrl: `${publicBaseUrl}/admin/objednavky`,
-          }),
-        ),
-      order.code,
-      'farmáři',
-    )
-  }
-
-  private async trySend(send: () => Promise<void>, orderCode: string, recipient: string) {
-    try {
-      await send()
-    } catch (error) {
-      this.deps.logger.error(
-        `Odeslání potvrzení ${recipient} selhalo, objednávka zůstává platná`,
-        {
-          orderCode,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      )
-    }
   }
 }

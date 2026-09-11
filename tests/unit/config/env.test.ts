@@ -96,7 +96,7 @@ describe('loadEnv — chybová hláška', () => {
   it('vypíše všechny chybějící klíče najednou', () => {
     const message = (() => {
       try {
-        loadEnv({ APP_ENV: 'development' } as NodeJS.ProcessEnv)
+        loadEnv({ APP_ENV: 'development' } as unknown as NodeJS.ProcessEnv)
         return ''
       } catch (error) {
         return error instanceof Error ? error.message : ''

@@ -1,4 +1,5 @@
 import type { DeliveryMethod, FieldStatus, NewsTag, OrderStatus, PaymentMethod } from '@/domain/enums'
+import type { PaymentInstruction, SentMailPreview } from '@/domain/ports/services'
 
 /**
  * Tvary, které use-case vrací prezentační vrstvě.
@@ -81,23 +82,10 @@ export interface OrderLineView {
   lineTotalLabel: string
 }
 
-export interface PaymentView {
-  accountNumber: string
-  ibanFormatted: string
-  amountLabel: string
-  variableSymbol: string
-  recipientMessage: string
-  instruction: string
-  /** `data:` URI s QR kódem, nebo `null`, když se nepodařilo vykreslit. */
-  qrDataUrl: string | null
-}
-
-export interface MailPreview {
-  kind: string
-  to: string
-  subject: string
-  body: string
-}
+// Platební pokyn i náhled pošty definuje port v doméně; aplikační vrstva je jen
+// prochází dál do UI, takže vlastní tvar by byl druhá definice téhož.
+export type PaymentView = PaymentInstruction
+export type MailPreview = SentMailPreview
 
 export interface OrderConfirmationView {
   code: string

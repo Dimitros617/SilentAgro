@@ -5,6 +5,7 @@ import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
 import { InsufficientStockError } from '@/domain/errors'
 import type { Clock, Logger, MailMessage, Mailer, TokenGenerator } from '@/domain/ports/services'
 import { Iban } from '@/domain/value-objects/iban'
+import { MailOrderNotifier } from '@/infrastructure/mail/order-notifier'
 import { disconnect, resetDatabase, testPrisma, testUow } from './helpers/db'
 
 class CollectingMailer implements Mailer {
@@ -27,12 +28,14 @@ const bank = { iban: Iban.of('CZ6508000000192000145399'), accountNumber: '200014
 const makeUseCase = (mailer: Mailer = new CollectingMailer()) =>
   new ReserveOrder({
     uow: testUow,
-    mailer,
     clock,
     tokenGenerator,
-    logger: silentLogger,
-    bank,
-    config: { farmerEmail: 'farma@silentagro.cz', publicBaseUrl: 'https://silentagro.cz' },
+    notifier: new MailOrderNotifier({
+      mailer,
+      logger: silentLogger,
+      bank,
+      config: { farmerEmail: 'farma@silentagro.cz', publicBaseUrl: 'https://silentagro.cz' },
+    }),
   })
 
 async function seedVariety(stockKg: number, priceCzk = 20): Promise<number> {

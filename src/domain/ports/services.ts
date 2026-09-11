@@ -54,3 +54,23 @@ export interface Logger {
   warn(message: string, meta?: Record<string, unknown>): void
   error(message: string, meta?: Record<string, unknown>): void
 }
+
+/** Platební pokyn pro zákazníka. Prostá data — doména neví, jak vznikl QR kód. */
+export interface PaymentInstruction {
+  readonly accountNumber: string
+  readonly iban: string
+  readonly ibanFormatted: string
+  readonly amountLabel: string
+  readonly variableSymbol: string
+  readonly recipientMessage: string
+  readonly instruction: string
+  /** `data:` URI s QR kódem, nebo `null`, když se nepodařilo vykreslit. */
+  readonly qrDataUrl: string | null
+}
+
+export interface SentMailPreview {
+  readonly kind: string
+  readonly to: string
+  readonly subject: string
+  readonly body: string
+}

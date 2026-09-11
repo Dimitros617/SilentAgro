@@ -59,15 +59,9 @@ export async function reserveOrderAction(
 
     const result = await new ReserveOrder({
       uow: container.uow,
-      mailer: container.mailer,
       clock: container.clock,
       tokenGenerator: container.tokenGenerator,
-      logger: container.logger,
-      bank: container.bank,
-      config: {
-        farmerEmail: container.config.farmerEmail,
-        publicBaseUrl: container.config.publicBaseUrl,
-      },
+      notifier: container.notifier,
     }).execute({
       customer: parsed.data.customer,
       delivery: parsed.data.delivery,

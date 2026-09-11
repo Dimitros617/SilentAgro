@@ -1,42 +1,23 @@
 import type { OrderConfirmationView } from '@/application/dto'
 import { DELIVERY_LABELS, PAYMENT_LABELS } from '@/domain/enums'
 import { NotFoundError } from '@/domain/errors'
+import type { OrderPresenter } from '@/domain/ports/order-presentation'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
-import { renderCustomerConfirmation, renderFarmerNotification } from '@/infrastructure/mail/templates'
-import { tryRenderQrDataUrl } from '@/infrastructure/payment/qr-code'
-import { type BankAccount, buildPaymentDetails } from '@/infrastructure/payment/spayd'
 import { formatCzkPerKg, formatDateTimeCs, formatKg } from '@/shared/format'
 
 export class GetOrderByToken {
-  constructor(
-    private readonly deps: {
-      uow: UnitOfWork
-      bank: BankAccount
-      config: { farmerEmail: string; publicBaseUrl: string }
-    },
-  ) {}
+  constructor(private readonly deps: { uow: UnitOfWork; presenter: OrderPresenter }) {}
 
   async execute(token: string): Promise<OrderConfirmationView> {
     const order = await this.deps.uow.repos.orders.findByPublicToken(token)
     if (!order) throw new NotFoundError('Rezervace')
 
-    const payment = buildPaymentDetails(order, this.deps.bank)
-    const qrDataUrl = payment ? await tryRenderQrDataUrl(payment.spayd) : null
-    const confirmationUrl = `${this.deps.config.publicBaseUrl}/rezervace/${order.publicToken}`
-
-    // Náhled odeslaných e-mailů se skládá ze stejných šablon, které je skutečně odeslaly.
-    // Kdyby se text psal na stránce znovu, časem by se s e-mailem rozešel.
-    const customerMail = renderCustomerConfirmation({
-      order,
-      confirmationUrl,
-      payment,
-      qrPng: null,
-    })
-    const farmerMail = renderFarmerNotification({
-      order,
-      farmerEmail: this.deps.config.farmerEmail,
-      adminUrl: `${this.deps.config.publicBaseUrl}/admin/objednavky`,
-    })
+    // Náhled se skládá z týchž šablon, které zprávy skutečně odeslaly. Kdyby se text
+    // na stránce formuloval podruhé, časem by se s e-mailem rozešel.
+    const [payment, mails] = await Promise.all([
+      this.deps.presenter.paymentInstructionFor(order),
+      this.deps.presenter.sentMailPreviews(order),
+    ])
 
     return {
       code: order.code,
@@ -56,31 +37,8 @@ export class GetOrderByToken {
       totalLabel: formatCzkPerKg(order.total),
       deliveryLabel: DELIVERY_LABELS[order.delivery],
       paymentLabel: PAYMENT_LABELS[order.payment],
-      payment: payment
-        ? {
-            accountNumber: payment.accountNumber,
-            ibanFormatted: payment.ibanFormatted,
-            amountLabel: payment.amountLabel,
-            variableSymbol: payment.variableSymbol,
-            recipientMessage: payment.recipientMessage,
-            instruction: payment.instruction,
-            qrDataUrl,
-          }
-        : null,
-      mails: [
-        {
-          kind: 'E-mail zákazníkovi',
-          to: customerMail.to,
-          subject: customerMail.subject,
-          body: customerMail.text,
-        },
-        {
-          kind: 'E-mail farmáři',
-          to: farmerMail.to,
-          subject: farmerMail.subject,
-          body: farmerMail.text,
-        },
-      ],
+      payment,
+      mails: [...mails],
     }
   }
 }

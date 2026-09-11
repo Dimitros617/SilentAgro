@@ -24,6 +24,8 @@ import { Money } from '@/domain/value-objects/money'
 // Pravidlo pro kód objednávky má jednu definici; fake ji sdílí s produkčním
 // repozitářem, aby test neověřoval kopii pravidla uvnitř fake implementace.
 import { orderCodeFor } from '@/infrastructure/persistence/prisma/repositories'
+import { MailOrderNotifier } from '@/infrastructure/mail/order-notifier'
+import { Iban } from '@/domain/value-objects/iban'
 
 export const makeVariety = (overrides: Partial<{
   id: number
@@ -352,3 +354,24 @@ export function makeBundle(options: FakeBundleOptions = {}) {
 }
 
 export const FARMER_ROLE = UserRole.FARMER
+
+
+export const TEST_BANK = {
+  iban: Iban.of('CZ6508000000192000145399'),
+  accountNumber: '2000145399/0800',
+}
+
+/**
+ * Notifier postavený nad skutečnými šablonami a falešným odesílatelem.
+ *
+ * Testy tak pořád ověřují obsah odeslané pošty, ale `ReserveOrder` zná jen port —
+ * stub, který by jen zaznamenal „notifikace proběhla“, by nic užitečného netvrdil.
+ */
+export function makeNotifier(mailer: Mailer, logger: Logger) {
+  return new MailOrderNotifier({
+    mailer,
+    logger,
+    bank: TEST_BANK,
+    config: { farmerEmail: 'farma@silentagro.cz', publicBaseUrl: 'https://silentagro.cz' },
+  })
+}

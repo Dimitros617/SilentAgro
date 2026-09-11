@@ -1,5 +1,6 @@
 import 'server-only'
 import { randomBytes } from 'node:crypto'
+import type { OrderNotifier, OrderPresenter } from '@/domain/ports/order-presentation'
 import type { Clock, Logger, Mailer, PasswordHasher, TokenGenerator, TokenService } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { Iban } from '@/domain/value-objects/iban'
@@ -7,6 +8,7 @@ import { BcryptPasswordHasher } from '@/infrastructure/auth/bcrypt-password-hash
 import { JoseTokenService } from '@/infrastructure/auth/jose-token-service'
 import { getEnv } from '@/infrastructure/config/env'
 import { createMailer, describeMailer } from '@/infrastructure/mail/create-mailer'
+import { MailOrderNotifier } from '@/infrastructure/mail/order-notifier'
 import { prisma } from '@/infrastructure/persistence/prisma/client'
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work'
 import { TokenBucket } from '@/infrastructure/rate-limit/token-bucket'
@@ -15,6 +17,8 @@ import type { BankAccount } from '@/infrastructure/payment/spayd'
 export interface Container {
   readonly uow: UnitOfWork
   readonly mailer: Mailer
+  readonly notifier: OrderNotifier
+  readonly presenter: OrderPresenter
   readonly hasher: PasswordHasher
   readonly tokens: TokenService
   readonly clock: Clock
@@ -62,18 +66,29 @@ function build(): Container {
 
   consoleLogger.info(`Pošta: ${describeMailer(mailerConfig)}`)
 
+  const mailer = createMailer(mailerConfig)
+  const bank = {
+    iban: Iban.of(env.BANK_ACCOUNT_IBAN),
+    accountNumber: env.BANK_ACCOUNT_NUMBER,
+  }
+  const notifier = new MailOrderNotifier({
+    mailer,
+    logger: consoleLogger,
+    bank,
+    config: { farmerEmail: env.FARMER_EMAIL, publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/+$/, '') },
+  })
+
   return {
     uow: new PrismaUnitOfWork(prisma),
-    mailer: createMailer(mailerConfig),
+    mailer,
+    notifier,
+    presenter: notifier,
     hasher: new BcryptPasswordHasher(),
     tokens: new JoseTokenService(env.AUTH_SECRET),
     clock: systemClock,
     tokenGenerator,
     logger: consoleLogger,
-    bank: {
-      iban: Iban.of(env.BANK_ACCOUNT_IBAN),
-      accountNumber: env.BANK_ACCOUNT_NUMBER,
-    },
+    bank,
     config: {
       farmerEmail: env.FARMER_EMAIL,
       publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/+$/, ''),

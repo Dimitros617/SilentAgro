@@ -2,17 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { ReserveOrder } from '@/application/use-cases/reserve-order'
 import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
 import { InsufficientStockError, ValidationError } from '@/domain/errors'
-import { Iban } from '@/domain/value-objects/iban'
 import {
   FakeMailer,
   RecordingLogger,
   SequentialTokenGenerator,
   fixedClock,
   makeBundle,
+  makeNotifier,
   makeVariety,
 } from './fakes'
-
-const bank = { iban: Iban.of('CZ6508000000192000145399'), accountNumber: '2000145399/0800' }
 
 const customer = {
   name: 'Jan Novák',
@@ -28,12 +26,9 @@ const setup = (options: { varieties?: ReturnType<typeof makeVariety>[]; mailerFa
 
   const useCase = new ReserveOrder({
     uow: bundle.uow,
-    mailer,
     clock: fixedClock(),
     tokenGenerator: new SequentialTokenGenerator(),
-    logger,
-    bank,
-    config: { farmerEmail: 'farma@silentagro.cz', publicBaseUrl: 'https://silentagro.cz' },
+    notifier: makeNotifier(mailer, logger),
   })
 
   return { ...bundle, mailer, logger, useCase }
