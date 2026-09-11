@@ -1,0 +1,128 @@
+# Dvoukontejnerová sestava: aplikace a MySQL, propojené přímo po interní síti.
+#
+# `migrator` je jednorázový kontejner — nasadí migrace a skončí, takže ustálený stav
+# jsou opravdu jen dvě běžící služby. Migrace nejde spustit z runtime image: `output:
+# 'standalone'` v něm nenechá `prisma` CLI a `read_only` rootfs by nedovolil `npx`
+# stáhnout ho za běhu.
+#
+# Start: cp .env.example .env, vyplnit tajemství, docker compose up -d --build
+
+name: silentagro
+
+x-db-url: &db-url
+  DATABASE_URL: mysql://${MYSQL_USER:-silentagro}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-silentagro}
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?nastavte MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-silentagro}
+      MYSQL_USER: ${MYSQL_USER:-silentagro}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?nastavte MYSQL_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks: [internal]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      # Shellová forma, aby se $$MYSQL_ROOT_PASSWORD rozbalilo uvnitř kontejneru.
+      # V exec formě se proměnná nerozbalí a healthcheck by se přihlašoval heslem
+      # doslova "$MYSQL_ROOT_PASSWORD".
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  migrator:
+    build:
+      context: .
+      target: migrator
+    environment: *db-url
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    security_opt: ['no-new-privileges:true']
+    restart: 'no'
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      <<: *db-url
+      # Vlastní klíč, ne NODE_ENV: standalone server si NODE_ENV nastavuje natvrdo
+      # na "production", takže by se podle něj nedala rozlišit vývojová sestava.
+      APP_ENV: ${APP_ENV:-production}
+      AUTH_SECRET: ${AUTH_SECRET:?nastavte AUTH_SECRET}
+      MAIL_DRIVER: ${MAIL_DRIVER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-SilentAgro <farma@silentagro.cz>}
+      FARMER_EMAIL: ${FARMER_EMAIL:-farma@silentagro.cz}
+      BANK_ACCOUNT_IBAN: ${BANK_ACCOUNT_IBAN:?nastavte BANK_ACCOUNT_IBAN}
+      BANK_ACCOUNT_NUMBER: ${BANK_ACCOUNT_NUMBER:?nastavte BANK_ACCOUNT_NUMBER}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      UPLOAD_DIR: /app/public/uploads
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    ports:
+      # Vazba na 127.0.0.1 schválně. Bez prefixu Docker obejde firewall hostitele
+      # a aplikace visí na všech rozhraních.
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+    volumes:
+      - uploads:/app/public/uploads
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      # Jediné, kam si standalone server za běhu potřebuje zapsat.
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=128m,mode=0755,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+
+  # Volitelné: `docker compose --profile mail up -d` přidá odchytávač pošty.
+  # Bez profilu běží přesně dvě služby. UI na http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: [mail]
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8025:8025'
+    networks: [internal]
+    security_opt: ['no-new-privileges:true']
+
+  # Volitelné: `docker compose --profile seed run --rm seeder`
+  seeder:
+    build:
+      context: .
+      target: migrator
+    profiles: [seed]
+    environment:
+      <<: *db-url
+      SEED_FARMER_PASSWORD: ${SEED_FARMER_PASSWORD:?nastavte SEED_FARMER_PASSWORD}
+    command: ['npx', 'tsx', 'prisma/seed.ts']
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    security_opt: ['no-new-privileges:true']
+
+volumes:
+  db-data:
+  uploads:
+
+networks:
+  internal:
+    driver: bridge

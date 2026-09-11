@@ -1,7 +1,29 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work'
 
-export const testPrisma = new PrismaClient()
+/**
+ * Integrační testy mažou tabulky, takže **nesmí** běžet proti vývojové databázi —
+ * jinak vývojáři po každém `npm run test:integration` zmizí seed a diví se, proč
+ * je aplikace prázdná. `TEST_DATABASE_URL` je proto povinná a musí mířit jinam
+ * než `DATABASE_URL`.
+ */
+const testDatabaseUrl = process.env.TEST_DATABASE_URL
+
+if (!testDatabaseUrl) {
+  throw new Error(
+    'Integrační testy vyžadují TEST_DATABASE_URL mířící na samostatnou databázi. ' +
+      'Například: TEST_DATABASE_URL="mysql://silentagro:silentagro@localhost:3307/silentagro_test"',
+  )
+}
+
+if (testDatabaseUrl === process.env.DATABASE_URL) {
+  throw new Error(
+    'TEST_DATABASE_URL se shoduje s DATABASE_URL. Testy mažou tabulky, takže by ' +
+      'smazaly vývojová data.',
+  )
+}
+
+export const testPrisma = new PrismaClient({ datasourceUrl: testDatabaseUrl })
 export const testUow = new PrismaUnitOfWork(testPrisma)
 
 /**
