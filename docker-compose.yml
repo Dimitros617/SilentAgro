@@ -104,13 +104,13 @@ services:
     security_opt: ['no-new-privileges:true']
 
   # Volitelné: `docker compose --profile mail up -d` přidá odchytávač pošty.
-  # Bez profilu běží přesně dvě služby. UI na http://localhost:8025
+  # Bez profilu běží přesně dvě služby. UI na http://localhost:${MAILPIT_UI_PORT}
   mailpit:
     image: axllent/mailpit:latest
     profiles: [mail]
     restart: unless-stopped
     ports:
-      - '127.0.0.1:8025:8025'
+      - '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025'
     networks: [internal]
     security_opt: ['no-new-privileges:true']
 
