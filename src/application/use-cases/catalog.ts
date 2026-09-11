@@ -16,6 +16,7 @@ export const toVarietyView = (variety: Variety): VarietyView => ({
   priceLabel: formatCzkPerKg(variety.pricePerKg),
   stockKg: variety.stock.value,
   stockLabel: variety.isSoldOut() ? 'vyprodáno' : formatKg(variety.stock),
+  capacityKg: variety.capacity.value,
   fillPercent: variety.fillPercent(),
   available: !variety.isSoldOut(),
 })

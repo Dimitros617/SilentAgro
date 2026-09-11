@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ListVarieties } from '@/application/use-cases/catalog'
+import { Scale } from '@/components/shop/scale'
 import { VarietyCard } from '@/components/shop/variety-card'
 import { getContainer } from '@/infrastructure/di/container'
 
@@ -28,10 +29,13 @@ export default async function ShopPage() {
           </p>
         </div>
       ) : (
-        <div className="grid-auto">
-          {varieties.map((variety) => (
-            <VarietyCard key={variety.id} variety={variety} />
-          ))}
+        <div className="burza">
+          <div className="grid-auto">
+            {varieties.map((variety) => (
+              <VarietyCard key={variety.id} variety={variety} />
+            ))}
+          </div>
+          <Scale />
         </div>
       )}
     </div>

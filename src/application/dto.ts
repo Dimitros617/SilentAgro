@@ -20,6 +20,8 @@ export interface VarietyView {
   priceLabel: string
   stockKg: number
   stockLabel: string
+  /** Kolik se do zásobníku vejde. Ukazatel z toho počítá šířku pásem. */
+  capacityKg: number
   fillPercent: number
   available: boolean
 }

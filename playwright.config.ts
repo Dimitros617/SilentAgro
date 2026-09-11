@@ -34,7 +34,7 @@ export default defineConfig({
 
     {
       name: 'navstevnik',
-      testMatch: /(nakup|pristup)\.spec\.ts/,
+      testMatch: /(nakup|pristup|burza)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
 
