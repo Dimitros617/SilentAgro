@@ -19,6 +19,7 @@ import type {
 import type { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
+import { orderCodeFor } from '@/shared/order-code'
 import {
   decimalToNumber,
   rawToVariety,
@@ -35,12 +36,7 @@ import {
 /** Uvnitř transakce má Prisma jiný typ klienta než mimo ni; repozitáře přijímají oba. */
 export type PrismaLike = PrismaClient | Prisma.TransactionClient
 
-/**
- * Kód objednávky navazuje na prototyp, kde první objednávka z aplikace nesla `#2610`.
- * Odvozuje se z auto-increment `id`, takže je unikátní i pod souběhem.
- */
-export const ORDER_CODE_OFFSET = 2609
-export const orderCodeFor = (id: number): string => `#${ORDER_CODE_OFFSET + id}`
+export { ORDER_CODE_OFFSET, orderCodeFor } from '@/shared/order-code'
 
 const orderInclude = { items: { orderBy: { id: 'asc' } } } as const
 
