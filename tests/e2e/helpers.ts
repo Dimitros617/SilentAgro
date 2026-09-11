@@ -63,7 +63,9 @@ function nextCustomerEmail(): string {
 export async function checkout(page: Page, options: CheckoutOptions = {}): Promise<void> {
   await page.goto('/kosik')
   await page.getByLabel('Jméno a příjmení').fill(options.name ?? 'Jan Novák')
-  await page.getByLabel(/E-mail/).fill(options.email ?? nextCustomerEmail())
+  // Přesný popisek: přihlašovací okno je v DOM i zavřené (nativní `<dialog>`),
+  // takže volnější vzor by sedl i na jeho pole.
+  await page.getByLabel('E-mail (sem přijde potvrzení)').fill(options.email ?? nextCustomerEmail())
   await page.getByRole('button', { name: options.payment ?? 'Hotově při převzetí' }).click()
   await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
   await expect(page).toHaveURL(/\/rezervace\//)

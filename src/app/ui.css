@@ -1046,23 +1046,30 @@
 
 /* ---------- modal a toast ---------- */
 
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(20, 32, 26, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 60;
-  padding: 20px;
+/*
+ * Nativní `<dialog>` otevřený přes `showModal()`. Vlastní překryv s `position: fixed`
+ * tu byl rozbitý: hlavička má `backdrop-filter`, a ta z ní dělá containing block,
+ * takže se překryv pozicoval podle hlavičky místo podle okna a okno vylétlo pryč.
+ * Prvek v top layer tenhle problém nemá.
+ */
+.modal {
   border: none;
+  padding: 0;
+  background: transparent;
+  /* `<dialog>` se jinak smrskne na šířku obsahu; návrh počítá s 430 px. */
+  width: min(430px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: visible;
+  color: inherit;
 }
 
-.modal {
+.modal::backdrop {
+  background: rgba(20, 32, 26, 0.55);
+}
+
+.modal__content {
   background: var(--bg);
   border-radius: 20px;
-  width: 100%;
-  max-width: 430px;
   padding: 30px;
   animation: rise 0.25s ease;
 }

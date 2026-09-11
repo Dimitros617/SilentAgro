@@ -103,7 +103,7 @@ test('u rozvozu je potřeba telefon', async ({ page }) => {
 
   await page.goto('/kosik')
   await page.getByLabel('Jméno a příjmení').fill('Jan Novák')
-  await page.getByLabel(/E-mail/).fill('jan@email.cz')
+  await page.getByLabel('E-mail (sem přijde potvrzení)').fill('jan@email.cz')
   await page.getByRole('button', { name: 'Rozvoz po okolí' }).click()
   await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
 
