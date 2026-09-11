@@ -154,13 +154,18 @@ export async function seed(prisma: PrismaClient, farmerPassword: string): Promis
     )
   }
 
+  // Účet farmy je ověřený rovnou: adresu zná provozovatel a posílat si ověřovací
+  // odkaz sám sobě nedává smysl.
+  const verifiedAt = new Date('2026-08-01T08:00:00.000Z')
+
   const farmer = await prisma.user.upsert({
     where: { email: 'farma@silentagro.cz' },
-    update: { name: 'Farmář Milan', role: 'FARMER' },
+    update: { name: 'Farmář Milan', role: 'FARMER', verifiedAt },
     create: {
       email: 'farma@silentagro.cz',
       name: 'Farmář Milan',
       role: 'FARMER',
+      verifiedAt,
       passwordHash: await bcrypt.hash(farmerPassword, 12),
     },
   })

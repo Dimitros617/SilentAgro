@@ -12,6 +12,7 @@ const TABS = [
   { href: '/admin/sklad', label: 'Sklad a ceny' },
   { href: '/admin/objednavky', label: 'Objednávky' },
   { href: '/admin/novinky', label: 'Novinky' },
+  { href: '/admin/uzivatele', label: 'Uživatelé' },
 ] as const
 
 export function AdminTabs() {
@@ -24,7 +25,11 @@ export function AdminTabs() {
           key={tab.href}
           href={tab.href}
           className="pill"
-          aria-current={pathname === tab.href ? 'page' : undefined}
+          aria-current={
+            pathname === tab.href || (tab.href !== '/admin' && pathname.startsWith(`${tab.href}/`))
+              ? 'page'
+              : undefined
+          }
         >
           {tab.label}
         </Link>

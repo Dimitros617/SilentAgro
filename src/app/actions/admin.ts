@@ -12,6 +12,14 @@ import {
   type SetOrderPaidResult,
   UpsertVariety,
 } from '@/application/use-cases/admin'
+import { CancelOrder } from '@/application/use-cases/cancel-order'
+import {
+  MarkUserVerified,
+  ResendVerification,
+  SendMessageToUser,
+  SetUserActive,
+} from '@/application/use-cases/users'
+import type { UserRowView } from '@/application/dto'
 import { NewsTag } from '@/domain/enums'
 import { ValidationError } from '@/domain/errors'
 import { requireFarmer } from '@/infrastructure/auth/session'
@@ -146,6 +154,110 @@ export async function deleteNewsAction(id: unknown): Promise<Result<null, string
     await new DeleteNews({ uow: getContainer().uow }).execute(parse(idSchema, id))
     revalidatePath('/')
     revalidatePath('/admin/novinky')
+    return ok(null)
+  } catch (error) {
+    return toResultError(error)
+  }
+}
+
+export async function cancelOrderAction(
+  orderId: unknown,
+  reason: unknown,
+): Promise<Result<OrderRowView, string>> {
+  try {
+    await requireFarmer()
+    const container = getContainer()
+
+    const row = await new CancelOrder({
+      uow: container.uow,
+      clock: container.clock,
+      notifier: container.notifier,
+    }).execute(parse(idSchema, orderId), parse(z.string().max(1000), reason))
+
+    // Sklad se změnil, takže stránky, které ho ukazují, musí přestat platit.
+    revalidateCatalog()
+    revalidatePath('/admin/objednavky')
+    return ok(row)
+  } catch (error) {
+    return toResultError(error)
+  }
+}
+
+export async function markUserVerifiedAction(userId: unknown): Promise<Result<UserRowView, string>> {
+  try {
+    await requireFarmer()
+    const container = getContainer()
+
+    const row = await new MarkUserVerified({
+      uow: container.uow,
+      clock: container.clock,
+    }).execute(parse(idSchema, userId))
+
+    revalidatePath('/admin/uzivatele')
+    return ok(row)
+  } catch (error) {
+    return toResultError(error)
+  }
+}
+
+export async function setUserActiveAction(
+  userId: unknown,
+  active: unknown,
+): Promise<Result<UserRowView, string>> {
+  try {
+    await requireFarmer()
+    const container = getContainer()
+
+    const row = await new SetUserActive({
+      uow: container.uow,
+      clock: container.clock,
+    }).execute(parse(idSchema, userId), parse(z.boolean(), active))
+
+    revalidatePath('/admin/uzivatele')
+    return ok(row)
+  } catch (error) {
+    return toResultError(error)
+  }
+}
+
+export async function sendUserMessageAction(
+  userId: unknown,
+  subject: unknown,
+  body: unknown,
+): Promise<Result<null, string>> {
+  try {
+    await requireFarmer()
+    const container = getContainer()
+
+    await new SendMessageToUser({
+      uow: container.uow,
+      notifier: container.userNotifier,
+    }).execute(
+      parse(idSchema, userId),
+      parse(z.string().max(200), subject),
+      parse(z.string().max(8000), body),
+    )
+
+    return ok(null)
+  } catch (error) {
+    return toResultError(error)
+  }
+}
+
+export async function resendVerificationAction(userId: unknown): Promise<Result<null, string>> {
+  try {
+    await requireFarmer()
+    const container = getContainer()
+
+    await new ResendVerification({
+      uow: container.uow,
+      clock: container.clock,
+      tokenGenerator: container.tokenGenerator,
+      notifier: container.userNotifier,
+      config: { publicBaseUrl: container.config.publicBaseUrl },
+    }).execute(parse(idSchema, userId))
+
+    revalidatePath('/admin/uzivatele')
     return ok(null)
   } catch (error) {
     return toResultError(error)

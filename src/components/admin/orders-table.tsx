@@ -1,10 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { advanceOrderStatusAction, setOrderPaidAction } from '@/app/actions/admin'
+import {
+  advanceOrderStatusAction,
+  cancelOrderAction,
+  setOrderPaidAction,
+} from '@/app/actions/admin'
 import type { OrderRowView } from '@/application/dto'
 import { useToast } from '@/components/layout/toast'
 import { OrderStatus } from '@/domain/enums'
+import { CancelOrderDialog } from './cancel-order-dialog'
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
   [OrderStatus.NEW]: 'status-btn status-btn--new',
@@ -12,7 +17,13 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
   [OrderStatus.COLLECTED]: 'status-btn',
 }
 
-function OrderRow({ initial }: { initial: OrderRowView }) {
+function OrderRow({
+  initial,
+  onCancelRequest,
+}: {
+  initial: OrderRowView
+  onCancelRequest: (order: OrderRowView, apply: (next: OrderRowView) => void) => void
+}) {
   const [row, setRow] = useState(initial)
   const [pending, setPending] = useState(false)
   const { show } = useToast()
@@ -38,9 +49,8 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
     setPending(true)
     try {
       const result = await setOrderPaidAction(row.id, paid)
-      if (result.ok) {
-        setRow((current) => ({ ...current, ...result.value }))
-      } else {
+      if (result.ok) setRow((current) => ({ ...current, ...result.value }))
+      else {
         setRow((current) => ({ ...current, ...previous }))
         show(result.error)
       }
@@ -50,8 +60,17 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
   }
 
   return (
-    <div className="orders-row">
-      <span className="orders-row__code">{row.code}</span>
+    <div className="orders-row" data-cancelled={row.isCancelled ? 'true' : undefined}>
+      <div>
+        <span className="orders-row__code">{row.code}</span>
+        {row.isCancelled ? (
+          <div>
+            <span className="badge" style={{ background: 'var(--tint-clay)', color: 'var(--clay)' }}>
+              Zrušeno
+            </span>
+          </div>
+        ) : null}
+      </div>
 
       <div>
         <div style={{ fontWeight: 600 }}>{row.customerName}</div>
@@ -69,6 +88,11 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
             „{row.note}“
           </div>
         ) : null}
+        {row.isCancelled && row.cancellationReason ? (
+          <div style={{ marginTop: 6, fontSize: 13, color: 'var(--clay)' }}>
+            Zrušeno {row.cancelledAtLabel}: {row.cancellationReason}
+          </div>
+        ) : null}
       </div>
 
       <span className="display" style={{ fontWeight: 700, fontSize: 17 }}>
@@ -76,7 +100,9 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
       </span>
 
       <div>
-        {row.requiresTransfer ? (
+        {row.isCancelled ? (
+          <span className="muted">—</span>
+        ) : row.requiresTransfer ? (
           <>
             <label className="paid">
               <input
@@ -98,14 +124,62 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
         )}
       </div>
 
-      <button type="button" className={STATUS_CLASS[row.status]} onClick={() => void advance()} disabled={pending}>
-        {row.statusLabel}
-      </button>
+      <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+        <button
+          type="button"
+          className={STATUS_CLASS[row.status]}
+          onClick={() => void advance()}
+          disabled={pending || row.isCancelled}
+          title={row.isCancelled ? 'Zrušená objednávka se už neposouvá' : undefined}
+        >
+          {row.statusLabel}
+        </button>
+
+        {row.isCancelled ? null : (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            style={{ height: 38, padding: '0 12px', color: 'var(--clay)', borderColor: '#e8d4cd' }}
+            onClick={() => onCancelRequest(row, setRow)}
+            disabled={pending}
+          >
+            Zrušit
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
 export function OrdersTable({ orders }: { orders: OrderRowView[] }) {
+  const { show } = useToast()
+  const [target, setTarget] = useState<{
+    order: OrderRowView
+    apply: (next: OrderRowView) => void
+  } | null>(null)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  const confirm = async (reason: string) => {
+    if (!target) return
+
+    setPending(true)
+    setError('')
+    try {
+      const result = await cancelOrderAction(target.order.id, reason)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+
+      target.apply(result.value)
+      setTarget(null)
+      show(`Rezervace ${result.value.code} zrušena, zákazník dostal e-mail`)
+    } finally {
+      setPending(false)
+    }
+  }
+
   if (orders.length === 0) {
     return (
       <div className="card card--dashed">
@@ -115,10 +189,29 @@ export function OrdersTable({ orders }: { orders: OrderRowView[] }) {
   }
 
   return (
-    <div className="card card--flush">
-      {orders.map((order) => (
-        <OrderRow key={order.id} initial={order} />
-      ))}
-    </div>
+    <>
+      <div className="card card--flush">
+        {orders.map((order) => (
+          <OrderRow
+            key={order.id}
+            initial={order}
+            onCancelRequest={(row, apply) => {
+              setError('')
+              setTarget({ order: row, apply })
+            }}
+          />
+        ))}
+      </div>
+
+      <CancelOrderDialog
+        order={target?.order ?? null}
+        pending={pending}
+        error={error}
+        onConfirm={(reason) => void confirm(reason)}
+        onClose={() => {
+          if (!pending) setTarget(null)
+        }}
+      />
+    </>
   )
 }

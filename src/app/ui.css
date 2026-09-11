@@ -1004,6 +1004,45 @@
   border-color: var(--ink);
 }
 
+.users-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto 130px 150px 120px 100px;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 14px;
+}
+
+.users-row:last-child {
+  border-bottom: none;
+}
+
+.users-order-row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) 110px auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.users-order-row:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 1000px) {
+  .users-row,
+  .users-order-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Zrušená objednávka má být na první pohled odlišitelná od živé. */
+.orders-row[data-cancelled='true'] {
+  opacity: 0.72;
+}
+
 /* ---------- novinky ---------- */
 
 .news-card {
