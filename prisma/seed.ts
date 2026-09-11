@@ -169,16 +169,16 @@ export async function seed(prisma: PrismaClient, farmerPassword: string): Promis
   const email = farmerEmail()
   const name = farmerName()
 
+  // Heslo se přepisuje i při opakovaném seedu. Aplikace změnu hesla nenabízí,
+  // takže seed je jediná cesta, jak se do administrace dostat — a když by si
+  // `update` heslo nechal, provozovatel by si ho v `.env` změnil, seed by
+  // ohlásil úspěch a přihlášení by dál padalo na "Nesprávné heslo".
+  const passwordHash = await bcrypt.hash(farmerPassword, 12)
+
   const farmer = await prisma.user.upsert({
     where: { email },
-    update: { name, role: 'FARMER', verifiedAt },
-    create: {
-      email,
-      name,
-      role: 'FARMER',
-      verifiedAt,
-      passwordHash: await bcrypt.hash(farmerPassword, 12),
-    },
+    update: { name, role: 'FARMER', verifiedAt, passwordHash, deactivatedAt: null },
+    create: { email, name, role: 'FARMER', verifiedAt, passwordHash },
   })
 
   const varietyIdBySlug = new Map<string, number>()

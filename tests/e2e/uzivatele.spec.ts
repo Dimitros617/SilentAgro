@@ -11,9 +11,10 @@ test('seznam uživatelů ukazuje stav ověření a počet objednávek', async ({
   )
   const farmerRow = page.locator('.users-row').filter({ hasText: 'farma@silentagro.cz' })
   await expect(farmerRow).toBeVisible()
-  // `exact`, jinak by vzor sedl i na jméno „Farmář Milan“
-  await expect(farmerRow.getByText('Farmář', { exact: true })).toBeVisible()
-  await expect(farmerRow.getByText('Ověřen', { exact: true })).toBeVisible()
+  // Jméno farmáře se bere z konfigurace a může se shodovat s popiskem role,
+  // takže se role i stav ověření hledají podle odznaku, ne podle textu na řádku.
+  await expect(farmerRow.locator('.badge').filter({ hasText: /^Farmář$/ })).toBeVisible()
+  await expect(farmerRow.locator('.badge').filter({ hasText: /^Ověřen$/ })).toBeVisible()
 })
 
 test('hledání zúží seznam', async ({ page }) => {

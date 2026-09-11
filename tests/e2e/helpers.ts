@@ -1,6 +1,10 @@
 import { expect, type Page } from '@playwright/test'
 
-export const FARMER_EMAIL = 'farma@silentagro.cz'
+/**
+ * Stejná adresa, na jakou seed zakládá účet farmáře. Kdo si v `.env` nastaví
+ * svoji, jinak dostane z E2E testů jen "Nesprávný e-mail nebo heslo".
+ */
+export const FARMER_EMAIL = process.env.FARMER_EMAIL ?? 'farma@silentagro.cz'
 
 /** Soubor se session farmáře, který vyrobí `auth.setup.ts`. */
 export const FARMER_STATE = 'tests/e2e/.auth/farmer.json'

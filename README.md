@@ -41,7 +41,12 @@ Aplikace běží na <http://localhost:3000>. Farmář se přihlásí adresou z `
 (výchozí `farma@silentagro.cz`) a heslem ze `SEED_FARMER_PASSWORD`.
 
 Chybějící povinná proměnná sestavu **nenastartuje** a compose napíše, která to je —
-tiše běžet s prázdným heslem nebude.
+tiše běžet s prázdným heslem nebude. Nesmyslná hodnota (třeba IBAN s překlepem)
+zastaví aplikaci hned při startu; důvod najdete v `docker compose logs app`. Dřív se
+takový překlep projevil až jako chybová stránka při každém požadavku.
+
+Zapomenuté heslo do administrace se vrací seedem: změňte `SEED_FARMER_PASSWORD`
+v `.env` a pusťte seeder znovu. Heslo se přepíše a případná deaktivace účtu zruší.
 
 ### Co si nastavíte bez zásahu do kódu
 
@@ -63,6 +68,10 @@ Chcete-li si prohlédnout odesílanou poštu, přidejte odchytávač:
 ```bash
 docker compose --profile mail up -d      # Mailpit na http://localhost:8025
 ```
+
+Máte-li 8025 obsazený, přenastavte `MAILPIT_UI_PORT`. Uvnitř sestavy se Mailpit
+jmenuje `mailpit` — do `SMTP_HOST` patří tohle jméno, ne `localhost`; localhost je
+uvnitř kontejneru kontejner sám a pošta by se nikam nedostala.
 
 ### Vývoj bez Dockeru
 
@@ -139,6 +148,9 @@ Všechny proměnné jsou v `.env.example` i s vysvětlením. Podstatné:
 | `MAIL_DRIVER` | `mailpit` (vývoj), `smtp` (produkce), `memory` (testy, nic neodesílá). V produkci je `memory` zakázané. |
 | `BANK_ACCOUNT_IBAN` | IBAN farmy pro QR platby. Ověřuje se mod-97 už při startu — překlep by posílal zákazníky platit na cizí účet. |
 | `BANK_ACCOUNT_NUMBER` | Číslo účtu tak, jak ho má vidět zákazník. |
+| `FARM_NAME`, `FARM_LEGAL_NAME`, `FARM_COMPANY_ID`, `FARM_PHONE` | Identita farmy v hlavičce, patičce a pod každým e-mailem. |
+| `DELIVERY_FEE_CZK`, `FREE_DELIVERY_ABOVE_CZK` | Poplatek za rozvoz a hranice pro dopravu zdarma. Hranice je ostrá: přesně na této částce se ještě účtuje. |
+| `DELIVERY_RADIUS_KM`, `RESERVATION_HOLD_DAYS` | Dojezd a doba držení rezervace; obojí se objeví v textech na webu i v e-mailu. |
 | `TRUST_PROXY` | Zapnout jen za reverzní proxy, která `X-Forwarded-For` skutečně nastavuje. Bez proxy si hlavičku nastaví kdokoli a rate limit podle IP jde obejít. |
 
 Konfigurace se čte na jediném místě (`src/infrastructure/config/env.ts`) a ověřuje Zodem.
