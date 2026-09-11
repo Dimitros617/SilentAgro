@@ -87,15 +87,20 @@ describe('konfigurace dorazí do kontejneru', () => {
     expect(missing).toEqual([])
   })
 
-  it('.env.example obsahuje i proměnné, které vyžaduje compose', () => {
-    // MYSQL_ROOT_PASSWORD a spol. nejsou ve schématu aplikace, ale bez nich
-    // sestava nenastartuje — kolega je musí najít v šabloně.
-    const documented = new Set(exampleKeys())
-    const required = [
-      ...read('docker-compose.yml').matchAll(/\$\{([A-Z][A-Z0-9_]*):\?/g),
-    ].map((match) => match[1] as string)
+  it.each(['docker-compose.yml', 'docker-compose.prod.yml'])(
+    '.env.example obsahuje proměnné, které vyžaduje %s',
+    (file) => {
+      // MYSQL_ROOT_PASSWORD, GHCR_REPOSITORY a spol. nejsou ve schématu aplikace,
+      // ale bez nich sestava nenastartuje — kolega je musí najít v šabloně.
+      // Produkční soubor se kontroluje taky: GHCR_REPOSITORY a APP_VERSION v ní
+      // chyběly a při nasazení se na to přišlo až z hlášky compose.
+      const documented = new Set(exampleKeys())
+      const required = [...read(file).matchAll(/\$\{([A-Z][A-Z0-9_]*):\?/g)].map(
+        (match) => match[1] as string,
+      )
 
-    const missing = [...new Set(required)].filter((key) => !documented.has(key))
-    expect(missing).toEqual([])
-  })
+      const missing = [...new Set(required)].filter((key) => !documented.has(key))
+      expect(missing).toEqual([])
+    },
+  )
 })

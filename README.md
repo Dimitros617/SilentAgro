@@ -233,11 +233,18 @@ počítá se statickými soubory známými v době sestavení, ne s těmi, kter�
 spravovaná. Provozovat MySQL v kontejneru vedle aplikace znamená starat se o zálohy,
 aktualizace a přežití restartu hostitele; u spravované databáze to dělá poskytovatel.
 
+Vydání vzniká značkou v gitu: `git tag -a v0.0.1 -m "…" && git push origin v0.0.1`
+spustí workflow Release, které sestaví, podepíše a zveřejní oba obrazy.
+
 ```bash
 cp .env.example .env.prod      # doplnit DATABASE_URL, SMTP, GHCR_REPOSITORY, APP_VERSION
 docker compose -f docker-compose.prod.yml --env-file .env.prod --profile migrate run --rm migrator
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
+
+Do `GHCR_REPOSITORY` patří název **malými písmeny**, i když je repozitář na GitHubu
+psaný velkými — Docker jiný odmítne hláškou `repository name must be lowercase`.
+Do `APP_VERSION` verze bez úvodního `v`: značka `v0.0.1` publikuje obrazy `0.0.1` a `0.0`.
 
 Migrace jsou **samostatný krok**, ne součást startu aplikace. Automatické migrace při
 startu vypadají pohodlně, ale při návratu na starší verzi je schéma už změněné a vrátit
