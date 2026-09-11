@@ -53,64 +53,72 @@ test('u skladu se ukáže stav po odeslání košíku', async ({ page }) => {
   await expect(after).not.toHaveText(before)
 })
 
-test('váha nasype do pytle jednu bramboru za každé půl kilo', async ({ page }) => {
-  await page.goto('/burza')
+/**
+ * Váha je zatím ze stránky sundaná, dokud se nedodělá. Testy se nemažou —
+ * popisují, jak se má chovat, a jsou hotové na chvíli, kdy se `<Scale />`
+ * vrátí do `app/burza/page.tsx`. Čistá logika modelu se mezitím ověřuje dál
+ * v `tests/unit/components/scale-model.test.ts`.
+ */
+test.describe.skip('váha', () => {
+  test('váha nasype do pytle jednu bramboru za každé půl kilo', async ({ page }) => {
+    await page.goto('/burza')
 
-  const potatoes = page.locator('[data-testid="scale-potatoes"] .scale__potato')
-  await expect(potatoes).toHaveCount(0)
-  await expect(page.getByTestId('scale-total')).toContainText('prázdný')
+    const potatoes = page.locator('[data-testid="scale-potatoes"] .scale__potato')
+    await expect(potatoes).toHaveCount(0)
+    await expect(page.getByTestId('scale-total')).toContainText('prázdný')
 
-  const card = firstCard(page)
-  const name = (await card.getByRole('heading').innerText()).trim()
-  await addToCart(page, name, 3)
+    const card = firstCard(page)
+    const name = (await card.getByRole('heading').innerText()).trim()
+    await addToCart(page, name, 3)
 
-  await expect(potatoes).toHaveCount(6)
-  await expect(page.getByTestId('scale-total')).toContainText('3 kg')
-})
-
-test('rameno se po zhoupnutí vrátí do roviny', async ({ page }) => {
-  await page.goto('/burza')
-
-  const beam = page.locator('.scale__beam')
-  const card = firstCard(page)
-  const name = (await card.getByRole('heading').innerText()).trim()
-
-  await addToCart(page, name, 2)
-  // Hned po vložení klesne na stranu pytle…
-  await expect(beam).toHaveAttribute('style', /rotate\(9deg\)/)
-  // …a dorovná se. Bez dorovnání by rameno zůstalo viset a vypadalo rozbitě.
-  await expect(beam).toHaveAttribute('style', /rotate\(0deg\)/, { timeout: 3000 })
-})
-
-test('miska s pytlem klesá na tu stranu, na kterou se nakloní rameno', async ({ page }) => {
-  await page.goto('/burza')
-
-  const card = firstCard(page)
-  const name = (await card.getByRole('heading').innerText()).trim()
-  await addToCart(page, name, 2)
-
-  // Obálky misek se mezi sebou porovnat nedají — pytel je vyšší než sloupec
-  // závaží. Čte se proto posun každé misky a otočení ramene, a to najednou,
-  // než se rameno stihne dorovnat.
-  await page.waitForTimeout(80)
-  const state = await page.evaluate(() => {
-    const shiftOf = (index: number) => {
-      const element = document.querySelectorAll('.scale__pan')[index] as HTMLElement
-      return Number.parseFloat(/translate\([^,]+,\s*([-\d.]+)px\)/.exec(element.style.transform)?.[1] ?? '0')
-    }
-    const beam = document.querySelector('.scale__beam') as HTMLElement
-    return {
-      rotace: Number.parseFloat(/rotate\(([-\d.]+)deg\)/.exec(beam.style.transform)?.[1] ?? '0'),
-      zavazi: shiftOf(0),
-      pytel: shiftOf(1),
-    }
+    await expect(potatoes).toHaveCount(6)
+    await expect(page.getByTestId('scale-total')).toContainText('3 kg')
   })
 
-  // Kladné otočení je v SVG po směru hodinových ručiček: pravý konec ramene
-  // klesá. Pytel na něm visí, takže musí klesat taky — tedy mít větší `y` než
-  // závaží. Obrácená znaménka rameno od misek odtrhnou.
-  expect(state.rotace).toBeGreaterThan(0)
-  expect(state.pytel).toBeGreaterThan(state.zavazi)
+  test('rameno se po zhoupnutí vrátí do roviny', async ({ page }) => {
+    await page.goto('/burza')
+
+    const beam = page.locator('.scale__beam')
+    const card = firstCard(page)
+    const name = (await card.getByRole('heading').innerText()).trim()
+
+    await addToCart(page, name, 2)
+    // Hned po vložení klesne na stranu pytle…
+    await expect(beam).toHaveAttribute('style', /rotate\(9deg\)/)
+    // …a dorovná se. Bez dorovnání by rameno zůstalo viset a vypadalo rozbitě.
+    await expect(beam).toHaveAttribute('style', /rotate\(0deg\)/, { timeout: 3000 })
+  })
+
+  test('miska s pytlem klesá na tu stranu, na kterou se nakloní rameno', async ({ page }) => {
+    await page.goto('/burza')
+
+    const card = firstCard(page)
+    const name = (await card.getByRole('heading').innerText()).trim()
+    await addToCart(page, name, 2)
+
+    // Obálky misek se mezi sebou porovnat nedají — pytel je vyšší než sloupec
+    // závaží. Čte se proto posun každé misky a otočení ramene, a to najednou,
+    // než se rameno stihne dorovnat.
+    await page.waitForTimeout(80)
+    const state = await page.evaluate(() => {
+      const shiftOf = (index: number) => {
+        const element = document.querySelectorAll('.scale__pan')[index] as HTMLElement
+        return Number.parseFloat(/translate\([^,]+,\s*([-\d.]+)px\)/.exec(element.style.transform)?.[1] ?? '0')
+      }
+      const beam = document.querySelector('.scale__beam') as HTMLElement
+      return {
+        rotace: Number.parseFloat(/rotate\(([-\d.]+)deg\)/.exec(beam.style.transform)?.[1] ?? '0'),
+        zavazi: shiftOf(0),
+        pytel: shiftOf(1),
+      }
+    })
+
+    // Kladné otočení je v SVG po směru hodinových ručiček: pravý konec ramene
+    // klesá. Pytel na něm visí, takže musí klesat taky — tedy mít větší `y` než
+    // závaží. Obrácená znaménka rameno od misek odtrhnou.
+    expect(state.rotace).toBeGreaterThan(0)
+    expect(state.pytel).toBeGreaterThan(state.zavazi)
+  })
 })
 
 test('nejde vložit víc, než kolik je skladem', async ({ page }) => {

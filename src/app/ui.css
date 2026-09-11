@@ -705,7 +705,10 @@
   text-decoration: line-through;
 }
 
-/* ── Burza: seznam odrůd a váha vedle sebe ───────────────────────────── */
+/* ── Burza: seznam odrůd a váha vedle sebe ─────────────────────────────
+   Váha je zatím ze stránky sundaná a `.burza` se nikde nepoužívá. Styly tu
+   zůstávají připravené na chvíli, kdy se `<Scale />` vrátí do app/burza/page.tsx;
+   bez nich by se rozvržení muselo psát znovu. */
 
 .burza {
   display: grid;

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { ListVarieties } from '@/application/use-cases/catalog'
-import { Scale } from '@/components/shop/scale'
 import { VarietyCard } from '@/components/shop/variety-card'
 import { getContainer } from '@/infrastructure/di/container'
 
@@ -11,6 +10,11 @@ export const metadata: Metadata = {
   description: 'Rezervace brambor přímo z pole. Co je pryč, je pryč — do další sklizně.',
 }
 
+/**
+ * Váha (`components/shop/scale.tsx`) se sem vrátí, až bude hotová. Do té doby
+ * zabírá seznam celou šířku; dvousloupcové rozvržení `.burza` na ni čeká
+ * v `ui.css` a jednotkové testy jejího modelu běží dál.
+ */
 export default async function ShopPage() {
   const varieties = await new ListVarieties({ uow: getContainer().uow }).execute()
 
@@ -29,13 +33,10 @@ export default async function ShopPage() {
           </p>
         </div>
       ) : (
-        <div className="burza">
-          <div className="grid-auto">
-            {varieties.map((variety) => (
-              <VarietyCard key={variety.id} variety={variety} />
-            ))}
-          </div>
-          <Scale />
+        <div className="grid-auto">
+          {varieties.map((variety) => (
+            <VarietyCard key={variety.id} variety={variety} />
+          ))}
         </div>
       )}
     </div>
