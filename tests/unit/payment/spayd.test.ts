@@ -105,9 +105,12 @@ describe('buildSpayd', () => {
   })
 })
 
+/** Lhůta z konfigurace; instrukce ji má opsat, ne mít vlastní číslo. */
+const HOLD_DAYS = 7
+
 describe('buildPaymentDetails', () => {
   it('u QR platby složí kompletní údaje', () => {
-    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE), bank)
+    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE), bank, HOLD_DAYS)
 
     expect(details).not.toBeNull()
     expect(details?.accountNumber).toBe('2000145399/0800')
@@ -118,15 +121,15 @@ describe('buildPaymentDetails', () => {
   })
 
   it('u převodu na účet údaje také složí', () => {
-    expect(buildPaymentDetails(orderWith(PaymentMethod.BANK_TRANSFER), bank)).not.toBeNull()
+    expect(buildPaymentDetails(orderWith(PaymentMethod.BANK_TRANSFER), bank, HOLD_DAYS)).not.toBeNull()
   })
 
   it('u platby hotově nevrací nic', () => {
-    expect(buildPaymentDetails(orderWith(PaymentMethod.CASH), bank)).toBeNull()
+    expect(buildPaymentDetails(orderWith(PaymentMethod.CASH), bank, HOLD_DAYS)).toBeNull()
   })
 
   it('instrukce obsahuje číslo účtu, variabilní symbol i zprávu pro příjemce', () => {
-    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE), bank)
+    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE), bank, HOLD_DAYS)
 
     expect(details?.instruction).toContain('2000145399/0800')
     expect(details?.instruction).toContain('2610')
@@ -136,7 +139,7 @@ describe('buildPaymentDetails', () => {
   it('částka v instrukci se shoduje s částkou v QR kódu', () => {
     // 0,5 kg × 19 Kč = 9,50 Kč; zaokrouhlení na celé koruny by poslalo jinou částku,
     // než jakou nese QR, a platba by seděla o padesátník vedle
-    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE, 0.5, 19), bank)
+    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE, 0.5, 19), bank, HOLD_DAYS)
 
     expect(details?.spayd).toContain('*AM:9.50*')
     expect(details?.amountLabel).toBe('9,50 Kč')
@@ -144,7 +147,7 @@ describe('buildPaymentDetails', () => {
   })
 
   it('celá částka se píše bez zbytečných haléřů', () => {
-    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE, 2.5, 22), bank)
+    const details = buildPaymentDetails(orderWith(PaymentMethod.QR_CODE, 2.5, 22), bank, HOLD_DAYS)
     expect(details?.amountLabel).toBe('55 Kč')
     expect(details?.spayd).toContain('*AM:55.00*')
   })

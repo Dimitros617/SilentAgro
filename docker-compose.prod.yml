@@ -109,5 +109,22 @@ services:
     restart: 'no'
     security_opt: ['no-new-privileges:true']
 
+  # Založí účet farmáře. Bez tohohle kroku běží po migracích prázdná databáze
+  # a do administrace se nedá přihlásit — v produkci není jiná cesta, jak účet
+  # vyrobit. Pouští se stejným obrazem jako migrace, jen jiným příkazem:
+  #   docker compose -f docker-compose.prod.yml --env-file .env.prod   #     --profile farmer run --rm farmer
+  # Opakované spuštění heslo přepíše, takže takhle se řeší i zapomenuté heslo.
+  farmer:
+    image: ghcr.io/${GHCR_REPOSITORY:?nastavte GHCR_REPOSITORY}:${APP_VERSION:?nastavte APP_VERSION}-migrator
+    profiles: [farmer]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?nastavte DATABASE_URL}
+      SEED_FARMER_PASSWORD: ${SEED_FARMER_PASSWORD:?nastavte SEED_FARMER_PASSWORD}
+      FARMER_EMAIL: ${FARMER_EMAIL:?nastavte FARMER_EMAIL}
+      SEED_FARMER_NAME: ${SEED_FARMER_NAME:-Farmář}
+    command: ['npx', 'tsx', 'prisma/create-farmer.ts']
+    restart: 'no'
+    security_opt: ['no-new-privileges:true']
+
 volumes:
   uploads:

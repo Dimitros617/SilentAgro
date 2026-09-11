@@ -4,7 +4,8 @@ Webová aplikace malé farmy pro přímý prodej brambor. Zákazník vidí skute
 a rezervuje si množství po půl kilogramu; rezervace sklad okamžitě odečte. Farmář spravuje
 odrůdy, ceny, objednávky a novinky v administraci.
 
-Vznikla podle prototypu `SilentAgro.dc.html` z Claude Design.
+Vznikla podle prototypu ze služby Claude Design. Samotný prototyp v repozitáři není —
+zdrojem pravdy je kód.
 
 ## Rozjezd
 
@@ -21,7 +22,7 @@ V `.env` vyplňte sekci **POVINNÉ** (je nahoře, ostatní má výchozí hodnoty
 | `MYSQL_ROOT_PASSWORD` | `node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"` |
 | `MYSQL_PASSWORD` | totéž, jiná hodnota |
 | `AUTH_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"` |
-| `SEED_FARMER_PASSWORD` | vaše heslo do administrace |
+| `SEED_FARMER_PASSWORD` | vaše heslo do administrace, **alespoň 8 znaků** (kratší seed odmítne) |
 | `BANK_ACCOUNT_IBAN` a `BANK_ACCOUNT_NUMBER` | účet farmy; předvyplněný je testovací |
 
 Nemáte-li po ruce Node, hodnoty vygenerujete i v Dockeru:
@@ -39,6 +40,10 @@ docker compose --profile seed run --rm seeder     # ukázková data
 
 Aplikace běží na <http://localhost:3000>. Farmář se přihlásí adresou z `FARMER_EMAIL`
 (výchozí `farma@silentagro.cz`) a heslem ze `SEED_FARMER_PASSWORD`.
+
+Vzor míří poštu na Mailpit (`MAIL_DRIVER="mailpit"`, `SMTP_HOST="mailpit"`), ten se ale
+spouští až profilem `mail`. Bez něj odesílání míří na neexistujícího hostitele a e-maily
+se neodešlou — přidejte `--profile mail`, nebo přepněte na vlastní SMTP server.
 
 Chybějící povinná proměnná sestavu **nenastartuje** a compose napíše, která to je —
 tiše běžet s prázdným heslem nebude. Nesmyslná hodnota (třeba IBAN s překlepem)
@@ -60,8 +65,9 @@ Všechno podstatné je v `.env`, rozdělené do sekcí:
 - **Bankovní účet** — IBAN a číslo účtu pro QR platby.
 - **Provoz** — veřejná adresa, port, limity pokusů o přihlášení.
 
-Texty, které konfigurace nepokrývá (popisky sekcí, znění novinek), jsou v `src/app`
-a v `src/infrastructure/mail/templates.ts`.
+Texty, které konfigurace nepokrývá, jsou v `src/app` (popisky sekcí) a
+v `src/infrastructure/mail/templates.ts` (znění e-mailů). Novinky a odrůdy jsou data
+v databázi: výchozí sadu zakládá seed, dál je farmář píše v administraci.
 
 Chcete-li si prohlédnout odesílanou poštu, přidejte odchytávač:
 
@@ -74,6 +80,8 @@ jmenuje `mailpit` — do `SMTP_HOST` patří tohle jméno, ne `localhost`; local
 uvnitř kontejneru kontejner sám a pošta by se nikam nedostala.
 
 ### Vývoj bez Dockeru
+
+Potřebujete **Node 22** (`engines` v `package.json`, verze je i v `.nvmrc`).
 
 ```bash
 docker run -d --name silentagro-mysql \
@@ -100,23 +108,34 @@ V produkci to potřeba není — `prisma migrate deploy` shadow databázi nepou�
 
 ## Architektura
 
-Závislosti míří dovnitř. `domain` nezná nikoho, `application` zná jen `domain`,
-`infrastructure` implementuje porty z `domain`, a stránky volají use-case přes
+Závislosti míří dovnitř. `domain` sahá nanejvýš na `shared`, `application` zná `domain`
+a `shared`, `infrastructure` implementuje porty z `domain`, a stránky volají use-case přes
 composition root.
 
 ```
 src/
-  domain/          entity, value objects, výčty, chyby, porty — nulové závislosti
+  domain/          entity, value objects, výčty, chyby, porty
   application/     use-cases a view modely
-  infrastructure/  Prisma, SMTP, autentizace, platby, konfigurace, DI
+  infrastructure/  Prisma, SMTP, autentizace, platby, rate limit, nahrávání, konfigurace, DI
   app/             Next.js App Router: stránky, server actions, API routy
   components/      React komponenty
   shared/          Result, formátování cs-CZ, pravidlo pro kód objednávky
+  middleware.ts    přesměrování nepřihlášených mimo administraci
+  instrumentation.ts  ověření konfigurace při startu serveru
 ```
 
-Hranici hlídá ESLint: import z `@/infrastructure/**` nebo `@prisma/client` je ve vrstvách
-`domain` a `application` chyba, ne varování. Během vývoje to zachytilo skutečné porušení —
-use-case si sáhl na šablony e-mailů a tím věděl, jak se pošta vykresluje.
+`shared` je jediná vrstva, na kterou smí sáhnout kdokoli: jsou v ní čisté funkce bez
+závislostí, typicky české formátování čísel a dat. `domain` z ní bere `formatKg`,
+`application` formátování do view modelů.
+
+Hranici hlídá ESLint: import z `@/infrastructure/**` nebo `@prisma/client` je chyba, ne
+varování. Pravidlo platí všude a výjimku mají jen `src/infrastructure`, `src/app`,
+`src/components`, `prisma` a `tests`. Dopadá tedy i na `src/instrumentation.ts` — ten
+konfiguraci načítá dynamickým `await import()`, který pravidlo nekontroluje. Statický
+import by tam neprošel, a je to tak správně: hook běží až při startu serveru.
+
+Během vývoje pravidlo zachytilo skutečné porušení — use-case si sáhl na šablony e-mailů
+a tím věděl, jak se pošta vykresluje.
 
 **Proč `src/app`, a ne `src/presentation/app`:** Next.js hledá App Router výhradně
 v `app/` nebo `src/app/`. Prezentační vrstvu tedy tvoří `src/app` a `src/components`,
@@ -137,7 +156,16 @@ pošta je notifikace.
 
 ## Konfigurace
 
-Všechny proměnné jsou v `.env.example` i s vysvětlením. Podstatné:
+Vše, co se nastavuje, je v `.env.example` i s vysvětlením. Jediná výjimka je
+`UPLOAD_DIR`: cestu ke složce s fotkami určuje compose napevno, aby odpovídala
+připojenému svazku — přepsatelná hodnota by ukládala mimo svazek a po restartu by
+soubory zmizely.
+
+Konfigurace se ověřuje **při startu serveru** (`src/instrumentation.ts`): chybná hodnota
+kontejner zastaví a důvod napíše do logu. Kontrola běží jen v Node runtime, ne při
+`next build` — ten běží bez produkčního prostředí a validace by ho shodila.
+
+Podstatné proměnné:
 
 | Proměnná | Význam |
 |---|---|
@@ -151,7 +179,10 @@ Všechny proměnné jsou v `.env.example` i s vysvětlením. Podstatné:
 | `FARM_NAME`, `FARM_LEGAL_NAME`, `FARM_COMPANY_ID`, `FARM_PHONE` | Identita farmy v hlavičce, patičce a pod každým e-mailem. |
 | `DELIVERY_FEE_CZK`, `FREE_DELIVERY_ABOVE_CZK` | Poplatek za rozvoz a hranice pro dopravu zdarma. Hranice je ostrá: přesně na této částce se ještě účtuje. |
 | `DELIVERY_RADIUS_KM`, `RESERVATION_HOLD_DAYS` | Dojezd a doba držení rezervace; obojí se objeví v textech na webu i v e-mailu. |
+| `PUBLIC_BASE_URL` | Veřejná adresa aplikace. **Výchozí hodnota ve vzoru je `http://localhost:3000`** a compose ji přijme — v produkci sem patří skutečná doména, jinak odkazy v potvrzovacích e-mailech míří zákazníkům na localhost. |
+| `MAIL_FROM`, `FARMER_EMAIL` | Odesílatel zpráv a kontaktní adresa farmy. Bez výchozí hodnoty v kódu; produkční compose je vyžaduje. |
 | `TRUST_PROXY` | Zapnout jen za reverzní proxy, která `X-Forwarded-For` skutečně nastavuje. Bez proxy si hlavičku nastaví kdokoli a rate limit podle IP jde obejít. |
+| `RATE_LIMIT_LOGIN_PER_15MIN`, `RATE_LIMIT_REGISTER_PER_HOUR`, `RATE_LIMIT_ORDERS_PER_HOUR` | Limity pokusů. Klíčem je dvojice IP + účet, takže špatná hesla u jednoho účtu nezablokují ostatní. Bez důvěryhodné proxy je IP konstantní, takže limit fakticky běží na účet. |
 
 Konfigurace se čte na jediném místě (`src/infrastructure/config/env.ts`) a ověřuje Zodem.
 Chybová hláška vypisuje názvy klíčů a důvod, nikdy hodnoty.
@@ -184,13 +215,37 @@ nejen že je zaplaceno, ale i kdy. Opakované zaškrtnutí čas nepřepíše.
 ## Testy
 
 ```bash
-npm run test              # unit, bez I/O
+npm run test              # unit, bez databáze a sítě
 npm run test:integration  # proti MySQL, vyžaduje TEST_DATABASE_URL
 npm run test:e2e          # Playwright proti běžící aplikaci
 ```
 
-E2E potřebují běžící aplikaci a `E2E_FARMER_PASSWORD` se stejnou hodnotou, jakou dostal
-seed. Žádné heslo není v repozitáři.
+Unit sada sahá na disk na jediném místě: `tests/unit/config/compose-env.test.ts` čte
+`env.ts`, `.env.example` a oba compose soubory a hlídá, že se konfigurace nerozejde.
+Cesty jsou relativní, takže se sada pouští z kořene repozitáře.
+
+**Integrační testy** potřebují databázi, která existuje a má nasazené migrace — helper
+jen otevře spojení, sám nemigruje:
+
+```bash
+docker exec -i silentagro-mysql mysql -uroot -proot   -e "CREATE DATABASE IF NOT EXISTS silentagro_test; GRANT ALL ON silentagro_test.* TO 'silentagro'@'%';"
+DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+```
+
+**E2E** potřebují běžící aplikaci a nainstalovaný prohlížeč — `npm install` ho nestahuje:
+
+```bash
+npx playwright install --with-deps chromium
+export E2E_FARMER_PASSWORD='…'   # stejná hodnota jako SEED_FARMER_PASSWORD
+export FARMER_EMAIL='…'          # jen pokud jste si ji změnili proti výchozí
+npm run test:e2e
+```
+
+Proměnné se čtou z prostředí procesu; `playwright.config.ts` žádný `.env` nenačítá,
+takže mít je v souboru nestačí. Žádné heslo není v repozitáři.
+
+Tři E2E scénáře jsou přeskočené (`test.describe.skip('váha', …)`): týkají se váhy na
+burze, která je ze stránky dočasně sundaná. Zapnou se spolu s ní.
 
 ## Bezpečnost
 
@@ -210,6 +265,14 @@ seed. Žádné heslo není v repozitáři.
   od klienta, jméno generuje server a nahrávat smí jen farmář.
 - Chyby: uživateli se ukáže hláška jen u doménových chyb. Cokoli jiného dostane obecný
   text — hlášky databáze prozrazují hostitele, uživatele i strukturu schématu.
+- Rate limit (`infrastructure/rate-limit`) na přihlášení, registraci a objednávky. Klíčem
+  je dvojice IP + účet, ne samotná IP: s jedním společným klíčem by pět špatných hesel
+  zamklo celou farmu. Limity se nastavují přes `RATE_LIMIT_*`, výchozí je 5 přihlášení
+  za 15 minut, 3 registrace a 10 objednávek za hodinu.
+- Hlavičky na každé odpovědi (`next.config.ts`): CSP, `X-Frame-Options: DENY`, `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy` a HSTS. CSP je uzavřená na vlastní původ, takže
+  externí skript, font nebo `fetch` na cizí doménu prohlížeč tiše zablokuje — počítejte
+  s tím, než něco takového přidáte.
 
 ## Docker
 
@@ -233,18 +296,44 @@ počítá se statickými soubory známými v době sestavení, ne s těmi, kter�
 spravovaná. Provozovat MySQL v kontejneru vedle aplikace znamená starat se o zálohy,
 aktualizace a přežití restartu hostitele; u spravované databáze to dělá poskytovatel.
 
-Vydání vzniká značkou v gitu: `git tag -a v0.0.1 -m "…" && git push origin v0.0.1`
+Vydání vzniká značkou v gitu: `git tag -a v0.0.2 -m "…" && git push origin v0.0.2`
 spustí workflow Release, které sestaví, podepíše a zveřejní oba obrazy.
 
 ```bash
-cp .env.example .env.prod      # doplnit DATABASE_URL, SMTP, GHCR_REPOSITORY, APP_VERSION
+cp .env.example .env.prod
+```
+
+V `.env.prod` doplňte:
+
+| Proměnná | Pozor na |
+|---|---|
+| `DATABASE_URL` | připojení ke spravované databázi |
+| `AUTH_SECRET` | ve vzoru je **prázdný**; prázdnou hodnotu compose odmítne stejně jako chybějící |
+| `PUBLIC_BASE_URL` | ve vzoru je `localhost` a compose ho **přijme** — odkazy v e-mailech by pak zákazníkům nefungovaly |
+| `MAIL_DRIVER`, `SMTP_*`, `MAIL_FROM` | `mailpit` v produkci nedává smysl, patří sem vlastní server |
+| `FARMER_EMAIL`, `SEED_FARMER_PASSWORD` | přihlášení do administrace; heslo alespoň 8 znaků |
+| `GHCR_REPOSITORY` | název **malými písmeny**, i když je repozitář na GitHubu psaný velkými — Docker jiný odmítne hláškou `repository name must be lowercase` |
+| `APP_VERSION` | verze bez úvodního `v`: značka `v0.0.2` publikuje obrazy `0.0.2` a `0.0` |
+
+Pokud je balíček v GHCR privátní (výchozí stav), přihlaste se k registru. Jinak stahování
+skončí na `unauthorized`:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u VASE_JMENO --password-stdin
+```
+
+Pak migrace, účet farmáře a start:
+
+```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod --profile migrate run --rm migrator
+docker compose -f docker-compose.prod.yml --env-file .env.prod --profile farmer  run --rm farmer
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
-Do `GHCR_REPOSITORY` patří název **malými písmeny**, i když je repozitář na GitHubu
-psaný velkými — Docker jiný odmítne hláškou `repository name must be lowercase`.
-Do `APP_VERSION` verze bez úvodního `v`: značka `v0.0.1` publikuje obrazy `0.0.1` a `0.0`.
+Krok `farmer` zakládá účet do administrace. Produkční sestava schválně nemá `seeder` jako
+vývojová — ten sype do databáze ukázkové odrůdy, novinky a smyšlené objednávky. Bez kroku
+`farmer` by po migracích běžela prázdná databáze a nebylo by se čím přihlásit. Pustit se
+dá opakovaně: heslo se přepíše, takže takhle se řeší i zapomenuté heslo.
 
 Migrace jsou **samostatný krok**, ne součást startu aplikace. Automatické migrace při
 startu vypadají pohodlně, ale při návratu na starší verzi je schéma už změněné a vrátit
@@ -265,7 +354,10 @@ jinou verzi, než jaká běžela před ním.
 | `integration` | MySQL jako service container, migrace, integrační testy |
 | `e2e` | celá sestava v Dockeru, seed, Playwright |
 | `security` | audit produkčních závislostí, gitleaks, Trivy sken image |
-| `release` | na tag `v*`: build a push do GHCR, SBOM, podpis přes cosign |
+
+Vydání je samostatný workflow `release.yml` s úlohou `publish`, ne součást `ci.yml`.
+Spouští se značkou `v*` a dělá build a push obou obrazů do GHCR, SBOM a podpis přes
+cosign.
 
 ## Co záměrně nemá
 

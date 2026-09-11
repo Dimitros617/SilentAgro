@@ -93,7 +93,7 @@ describe('renderCustomerConfirmation', () => {
       delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
-      payment: buildPaymentDetails(order, bank),
+      payment: buildPaymentDetails(order, bank, DELIVERY.holdDays),
       qrPng,
     })
 
@@ -110,7 +110,7 @@ describe('renderCustomerConfirmation', () => {
       delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
-      payment: buildPaymentDetails(order, bank),
+      payment: buildPaymentDetails(order, bank, DELIVERY.holdDays),
       qrPng: null,
     })
 
@@ -127,7 +127,7 @@ describe('renderCustomerConfirmation', () => {
       delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
-      payment: buildPaymentDetails(order, bank),
+      payment: buildPaymentDetails(order, bank, DELIVERY.holdDays),
       qrPng: null,
     })
 

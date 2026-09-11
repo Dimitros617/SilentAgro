@@ -154,7 +154,15 @@ const DELIVERY_FEE = 60
 const farmerEmail = (): string => process.env.FARMER_EMAIL ?? 'farma@silentagro.cz'
 const farmerName = (): string => process.env.SEED_FARMER_NAME ?? 'Farmář'
 
-export async function seed(prisma: PrismaClient, farmerPassword: string): Promise<void> {
+/**
+ * Založí nebo obnoví účet farmáře. Odděleně od ukázkových dat, protože
+ * v produkci je potřeba jen tohle — demo odrůdy a smyšlené objednávky by tam
+ * byly na obtíž. `docker-compose.prod.yml` tuhle cestu volá profilem `farmer`.
+ */
+export async function ensureFarmer(
+  prisma: PrismaClient,
+  farmerPassword: string,
+): Promise<{ id: number; email: string }> {
   if (!farmerPassword || farmerPassword.length < 8) {
     throw new Error(
       'SEED_FARMER_PASSWORD musí být nastavené a mít alespoň 8 znaků. ' +
@@ -169,9 +177,9 @@ export async function seed(prisma: PrismaClient, farmerPassword: string): Promis
   const email = farmerEmail()
   const name = farmerName()
 
-  // Heslo se přepisuje i při opakovaném seedu. Aplikace změnu hesla nenabízí,
-  // takže seed je jediná cesta, jak se do administrace dostat — a když by si
-  // `update` heslo nechal, provozovatel by si ho v `.env` změnil, seed by
+  // Heslo se přepisuje i při opakovaném spuštění. Aplikace změnu hesla nenabízí,
+  // takže tohle je jediná cesta, jak se do administrace dostat — a když by si
+  // `update` heslo nechal, provozovatel by si ho v `.env` změnil, skript by
   // ohlásil úspěch a přihlášení by dál padalo na "Nesprávné heslo".
   const passwordHash = await bcrypt.hash(farmerPassword, 12)
 
@@ -180,6 +188,12 @@ export async function seed(prisma: PrismaClient, farmerPassword: string): Promis
     update: { name, role: 'FARMER', verifiedAt, passwordHash, deactivatedAt: null },
     create: { email, name, role: 'FARMER', verifiedAt, passwordHash },
   })
+
+  return { id: farmer.id, email: farmer.email }
+}
+
+export async function seed(prisma: PrismaClient, farmerPassword: string): Promise<void> {
+  const farmer = await ensureFarmer(prisma, farmerPassword)
 
   const varietyIdBySlug = new Map<string, number>()
   for (const [index, variety] of VARIETIES.entries()) {

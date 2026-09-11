@@ -64,7 +64,8 @@ jobs:
       # Migrační image se publikuje zvlášť, protože runtime image `prisma` CLI nenese —
       # `output: 'standalone'` ho do něj nedá a `read_only` rootfs by nedovolil doinstalovat.
       # Bez tohohle kroku by v produkci nešly nasadit migrace vůbec.
-      - name: Sestavit a publikovat migrační image
+      - id: build-migrator
+        name: Sestavit a publikovat migrační image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -84,7 +85,12 @@ jobs:
 
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
-      - name: Podepsat image
+      # Podepisují se oba obrazy. Migrační se v produkci pouští proti ostré
+      # databázi a zakládá účet farmáře, takže na nepodepsaný není důvod spoléhat
+      # o nic míň než na runtime.
+      - name: Podepsat obrazy
         run: |
           cosign sign --yes \
             "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository }}@${{ steps.build-migrator.outputs.digest }}"

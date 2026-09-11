@@ -49,7 +49,7 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
   }
 
   async notifyOrderPlaced(order: Order): Promise<void> {
-    const payment = buildPaymentDetails(order, this.deps.bank)
+    const payment = buildPaymentDetails(order, this.deps.bank, this.deps.delivery.holdDays)
     const qrPng = payment ? await tryRenderQrPng(payment.spayd) : null
 
     const messages = [
@@ -105,7 +105,7 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
   }
 
   async paymentInstructionFor(order: Order): Promise<PaymentInstruction | null> {
-    const payment = buildPaymentDetails(order, this.deps.bank)
+    const payment = buildPaymentDetails(order, this.deps.bank, this.deps.delivery.holdDays)
     if (!payment) return null
 
     return {
@@ -121,7 +121,7 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
   }
 
   async sentMailPreviews(order: Order): Promise<SentMailPreview[]> {
-    const payment = buildPaymentDetails(order, this.deps.bank)
+    const payment = buildPaymentDetails(order, this.deps.bank, this.deps.delivery.holdDays)
 
     const customer = renderCustomerConfirmation({
       order,

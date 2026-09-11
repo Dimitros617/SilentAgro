@@ -231,6 +231,7 @@ export function renderVerification(farm: FarmIdentity, name: string, to: string,
         <p style="font-size:15px;line-height:1.6">potvrďte prosím svůj e-mail:</p>
         <p><a href="${escapeHtml(verificationUrl)}" style="display:inline-block;padding:12px 20px;background:#1f6f4a;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">Potvrdit e-mail</a></p>
         <p style="font-size:13px;color:#6f7a72">Odkaz platí 48 hodin. Pokud jste si účet nezakládali, zprávu ignorujte.</p>
+        <p style="font-size:13px;color:#6f7a72">${escapeHtml(farmSignature(farm))}</p>
       </div>
     `,
   }
@@ -240,7 +241,9 @@ export function renderFarmerMessage(farm: FarmIdentity, name: string, to: string
   return {
     to,
     subject,
-    text: [`Dobrý den, ${name},`, '', body, '', 'SilentAgro by Silent Industries · +420 777 123 456'].join('\n'),
+    // Podpis z konfigurace, ne napevno. Textová a HTML verze téže zprávy se jinak
+    // rozejdou a provozovatel posílá jménem cizí farmy.
+    text: [`Dobrý den, ${name},`, '', body, '', farmSignature(farm)].join('\n'),
     html: `
       <div style="font-family:system-ui,sans-serif;color:#14201a;max-width:560px">
         <p style="font-size:15px;line-height:1.6">Dobrý den, ${escapeHtml(name)},</p>

@@ -74,10 +74,21 @@ export function buildSpayd(input: SpaydInput): string {
   ].join('*')
 }
 
-const INSTRUCTION = (amount: string, account: string, vs: string, message: string): string =>
+/**
+ * Lhůta se bere z konfigurace, ne z napevno zapsaného čísla. Tentýž e-mail jinde
+ * píše „Zboží držíme X dní" podle `RESERVATION_HOLD_DAYS`; se zadrátovanou pětkou
+ * si zpráva při jiném nastavení protiřečila sama se sebou.
+ */
+const INSTRUCTION = (
+  amount: string,
+  account: string,
+  vs: string,
+  message: string,
+  holdDays: number,
+): string =>
   `Částku ${amount} pošlete na účet ${account}, variabilní symbol ${vs}. ` +
   `Do zprávy pro příjemce prosím napište ${message} — podle ní platbu spárujeme. ` +
-  'Peníze čekáme do 5 dnů, do té doby brambory držíme.'
+  `Peníze čekáme do ${holdDays} dní, do té doby brambory držíme.`
 
 /**
  * Platební údaje objednávky, nebo `null` u platby hotově.
@@ -86,7 +97,11 @@ const INSTRUCTION = (amount: string, account: string, vs: string, message: strin
  * zaokrouhluje na celé koruny a u půlkilových objednávek by vypsal jinou částku,
  * než jakou nese QR kód.
  */
-export function buildPaymentDetails(order: Order, bank: BankAccount): PaymentDetails | null {
+export function buildPaymentDetails(
+  order: Order,
+  bank: BankAccount,
+  holdDays: number,
+): PaymentDetails | null {
   if (!requiresTransfer(order.payment)) return null
 
   const recipientMessage = buildRecipientMessage(order.code)
@@ -104,6 +119,7 @@ export function buildPaymentDetails(order: Order, bank: BankAccount): PaymentDet
       bank.accountNumber,
       order.variableSymbol,
       recipientMessage,
+      holdDays,
     ),
     spayd: buildSpayd({
       iban: bank.iban.value,
