@@ -12,11 +12,13 @@ export interface HeaderSession {
   role: 'CUSTOMER' | 'FARMER'
 }
 
-const NAV = [
+const PUBLIC_NAV = [
   { href: '/', label: 'Domů' },
   { href: '/burza', label: 'Burza' },
   { href: '/sklad', label: 'Sklad' },
 ] as const
+
+const ADMIN_NAV = { href: '/admin', label: 'Administrace' } as const
 
 /** Vlastní komponenta, protože `useSearchParams` vyžaduje Suspense hranici. */
 function AuthPrompt({ onOpen }: { onOpen: () => void }) {
@@ -47,8 +49,13 @@ export function SiteHeader({ session }: { session: HeaderSession | null }) {
           </span>
         </Link>
 
+        {/*
+          Administrace je běžná položka navigace, ne samostatné výrazné tlačítko:
+          farmář ji používá stejně často jako ostatní sekce a odlišná grafika
+          jen odváděla pozornost. Zákazníkovi se nezobrazí vůbec.
+        */}
         <nav className="nav" aria-label="Hlavní navigace">
-          {NAV.map((item) => (
+          {PUBLIC_NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -58,6 +65,17 @@ export function SiteHeader({ session }: { session: HeaderSession | null }) {
               {item.label}
             </Link>
           ))}
+
+          {session?.role === 'FARMER' ? (
+            <Link
+              href={ADMIN_NAV.href}
+              className="nav__link nav__link--admin"
+              // Zvýrazněná i na podstránkách administrace, ne jen na /admin.
+              aria-current={pathname.startsWith('/admin') ? 'page' : undefined}
+            >
+              {ADMIN_NAV.label}
+            </Link>
+          ) : null}
         </nav>
 
         <div className="header__spacer" />
@@ -71,20 +89,6 @@ export function SiteHeader({ session }: { session: HeaderSession | null }) {
             {count}
           </span>
         </Link>
-
-        {session?.role === 'FARMER' ? (
-          <Link
-            href="/admin"
-            className="btn"
-            style={{
-              background: 'var(--tint-gold)',
-              borderColor: 'var(--gold)',
-              color: 'var(--gold-ink)',
-            }}
-          >
-            Administrace
-          </Link>
-        ) : null}
 
         {session ? (
           <div style={{ textAlign: 'right', lineHeight: 1.2 }}>

@@ -50,3 +50,10 @@ test('neplatný token rezervace nic neprozradí', async ({ page }) => {
   const response = await page.goto('/rezervace/tenhle-token-nikdy-neexistoval')
   expect(response?.status()).toBe(404)
 })
+
+test('nepřihlášený návštěvník odkaz na administraci nevidí', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.locator('.nav')).toContainText('Burza')
+  await expect(page.getByRole('link', { name: 'Administrace' })).toHaveCount(0)
+})

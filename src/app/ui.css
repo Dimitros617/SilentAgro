@@ -183,6 +183,17 @@
   color: var(--ink);
 }
 
+/* Administrace patří do navigace, ale ať je poznat, že je jen pro farmáře. */
+.nav__link--admin {
+  color: var(--gold-ink);
+}
+
+.nav__link--admin:hover,
+.nav__link--admin[aria-current='page'] {
+  background: var(--tint-gold);
+  color: var(--gold-ink);
+}
+
 .header__spacer {
   flex: 1;
 }

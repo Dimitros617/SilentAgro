@@ -146,3 +146,14 @@ test('zrušení bez důvodu nejde potvrdit', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Zrušit rezervaci', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Zpět' }).click()
 })
+
+test('odkaz na administraci je v hlavní navigaci a jen pro farmáře', async ({ page }) => {
+  await page.goto('/')
+
+  const inNav = page.locator('.nav').getByRole('link', { name: 'Administrace' })
+  await expect(inNav).toBeVisible()
+
+  // Zvýrazněný i na podstránkách, ne jen na /admin
+  await page.goto('/admin/uzivatele')
+  await expect(inNav).toHaveAttribute('aria-current', 'page')
+})
