@@ -56,7 +56,11 @@ test('novinka bez titulku se nezveřejní', async ({ page }) => {
 test('farmář posouvá stav objednávky v cyklu', async ({ page }) => {
   await page.goto('/admin/objednavky')
 
-  const statusButton = page.locator('.status-btn').first()
+  // Zrušená objednávka se neposouvá a její tlačítko je zakázané — kdyby taková
+  // ležela v seznamu první, test by čekal na klik, který nikdy neprojde.
+  const statusButton = page
+    .locator('.orders-row:not([data-cancelled="true"]) .status-btn')
+    .first()
   const before = (await statusButton.innerText()).trim()
 
   await statusButton.click()
@@ -156,4 +160,28 @@ test('odkaz na administraci je v hlavní navigaci a jen pro farmáře', async ({
   // Zvýrazněný i na podstránkách, ne jen na /admin
   await page.goto('/admin/uzivatele')
   await expect(inNav).toHaveAttribute('aria-current', 'page')
+})
+
+test('tlačítka stavu mají ve všech řádcích stejnou šířku', async ({ page }) => {
+  // Popisky stavů jsou různě dlouhé („Nová“ vs. „Připravena“). Než se šířka
+  // ustálila, ikona zrušení skákala mezi řádky o desítky pixelů.
+  await page.goto('/admin/objednavky')
+  await expect(page.locator('.orders-row').first()).toBeVisible()
+
+  const layout = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.orders-row .status-btn')] as HTMLElement[]
+    const box = (el: HTMLElement) => el.getBoundingClientRect()
+    return {
+      pocet: buttons.length,
+      sirky: [...new Set(buttons.map((el) => Math.round(box(el).width)))],
+      levyOkraj: [...new Set(buttons.map((el) => Math.round(box(el).left)))],
+      // Zrušené řádky popelnici nevykreslují; prázdná stopa musí místo udržet.
+      pretekaText: buttons.some((el) => el.scrollWidth > el.clientWidth + 1),
+    }
+  })
+
+  expect(layout.pocet).toBeGreaterThan(1)
+  expect(layout.sirky).toHaveLength(1)
+  expect(layout.levyOkraj).toHaveLength(1)
+  expect(layout.pretekaText).toBe(false)
 })

@@ -143,7 +143,7 @@ function OrderRow({
         )}
       </div>
 
-      <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+      <div className="orders-row__actions">
         <button
           type="button"
           className={STATUS_CLASS[row.status]}

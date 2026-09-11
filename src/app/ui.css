@@ -961,9 +961,27 @@
   font-weight: 700;
 }
 
+/**
+ * Poslední sloupec řádku: stav vlevo, zrušení vpravo.
+ *
+ * Mřížka místo flexu proto, že popisky stavů jsou různě dlouhé („Nová" 60 px,
+ * „Připravena" 96 px) a ikona popelnice pak v každém řádku seděla jinde.
+ * Stopa `1fr` dá tlačítku stavu ve všech řádcích stejnou šířku, aniž by ji
+ * někdo musel spočítat a zapsat v pixelech. Druhá stopa zůstává i u zrušené
+ * objednávky, kde se popelnice nevykresluje — jinak by se řádek rozjel.
+ */
+.orders-row__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 6px;
+  align-items: center;
+}
+
 .status-btn {
+  width: 100%;
   height: 38px;
   padding: 0 14px;
+  white-space: nowrap;
   border-radius: var(--radius-sm);
   font-weight: 600;
   font-size: 13px;
