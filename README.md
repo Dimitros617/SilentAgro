@@ -179,6 +179,29 @@ a svazek s fotkami.
 Fotky se servírují cestou `/api/uploads/[name]`, ne ze složky `public/` — standalone build
 počítá se statickými soubory známými v době sestavení, ne s těmi, které přibyly za běhu.
 
+### Produkční nasazení
+
+`docker-compose.prod.yml` obsahuje **jen aplikaci** — databáze se očekává externí,
+spravovaná. Provozovat MySQL v kontejneru vedle aplikace znamená starat se o zálohy,
+aktualizace a přežití restartu hostitele; u spravované databáze to dělá poskytovatel.
+
+```bash
+cp .env.example .env.prod      # doplnit DATABASE_URL, SMTP, GHCR_REPOSITORY, APP_VERSION
+docker compose -f docker-compose.prod.yml --env-file .env.prod --profile migrate run --rm migrator
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+Migrace jsou **samostatný krok**, ne součást startu aplikace. Automatické migrace při
+startu vypadají pohodlně, ale při návratu na starší verzi je schéma už změněné a vrátit
+se není kam.
+
+Migrátor používá jiný image než aplikace (`:<verze>-migrator`): runtime image je
+`output: 'standalone'` a `prisma` CLI v něm schválně není. Release workflow publikuje
+oba ze stejného vydání.
+
+Verze se zadává konkrétní, ne `latest` — restart kontejneru nikdy nesmí tiše přinést
+jinou verzi, než jaká běžela před ním.
+
 ## CI/CD
 
 | Úloha | Co dělá |

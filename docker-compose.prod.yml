@@ -1,0 +1,100 @@
+# Produkční nasazení: jen aplikace, proti externí databázi a externímu SMTP.
+#
+# Databáze tu **záměrně není**. Provozovat MySQL v kontejneru vedle aplikace znamená
+# starat se o zálohy, aktualizace a přežití restartu hostitele — u spravované databáze
+# to dělá poskytovatel. Vývojová sestava v `docker-compose.yml` databázi obsahuje,
+# protože tam jde o pohodlí, ne o data, o která je škoda přijít.
+#
+# Použití:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Image se nesestavuje, bere se z GHCR podle konkrétní verze. Migrace se nasazují
+# samostatně, vědomým krokem — viz níž.
+
+name: silentagro-prod
+
+services:
+  app:
+    # Konkrétní verze, ne `latest`. Restart kontejneru nikdy nesmí tiše přinést
+    # jinou verzi aplikace, než jaká běžela před ním.
+    image: ghcr.io/${GHCR_REPOSITORY:?nastavte GHCR_REPOSITORY}:${APP_VERSION:?nastavte APP_VERSION}
+    restart: unless-stopped
+
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?nastavte DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET:?nastavte AUTH_SECRET}
+
+      # V produkci schéma zakazuje driver "memory"; potvrzení objednávek se nesmí
+      # tiše zahazovat.
+      MAIL_DRIVER: ${MAIL_DRIVER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:?nastavte SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?nastavte MAIL_FROM}
+      FARMER_EMAIL: ${FARMER_EMAIL:?nastavte FARMER_EMAIL}
+
+      BANK_ACCOUNT_IBAN: ${BANK_ACCOUNT_IBAN:?nastavte BANK_ACCOUNT_IBAN}
+      BANK_ACCOUNT_NUMBER: ${BANK_ACCOUNT_NUMBER:?nastavte BANK_ACCOUNT_NUMBER}
+
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?nastavte PUBLIC_BASE_URL}
+      UPLOAD_DIR: /app/public/uploads
+
+      # Zapnout jen tehdy, když před aplikací skutečně stojí reverzní proxy.
+      # Bez ní si X-Forwarded-For nastaví kdokoli.
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+
+    ports:
+      # Na smyčku. Navenek patří reverzní proxy, která řeší TLS.
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+
+    volumes:
+      - uploads:/app/public/uploads
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=128m,mode=0755,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # Migrace se pouštějí vědomě, ne při každém startu aplikace:
+  #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrator
+  #
+  # Automatické migrace při startu vypadají pohodlně, ale při rollbacku na starší
+  # verzi aplikace už je schéma změněné a vrátit se není kam. Oddělený krok dovolí
+  # migraci naplánovat a případně nejdřív zazálohovat.
+  #
+  # Používá jiný image než aplikace: runtime image je `output: 'standalone'` a `prisma`
+  # CLI v něm schválně není. Migrační image se publikuje ze stejného vydání pod
+  # příponou `-migrator`.
+  migrator:
+    image: ghcr.io/${GHCR_REPOSITORY:?nastavte GHCR_REPOSITORY}:${APP_VERSION:?nastavte APP_VERSION}-migrator
+    profiles: [migrate]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?nastavte DATABASE_URL}
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    restart: 'no'
+    security_opt: ['no-new-privileges:true']
+
+volumes:
+  uploads:
