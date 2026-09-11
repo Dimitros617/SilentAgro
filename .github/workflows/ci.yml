@@ -8,6 +8,12 @@ on:
 
 # Výchozí GITHUB_TOKEN má právo zápisu do repozitáře. Žádná z těchto úloh ho
 # nepotřebuje, takže se hned na začátku omezí na čtení.
+#
+# Cizí akce jsou připnuté na commit SHA, ne na značku: značka je pohyblivý ukazatel
+# a její přepsání by v úloze s přístupem k tajemstvím znamenalo spuštění cizího kódu.
+# Akce z `actions/*` a `github/*` zůstávají na značce — jsou od provozovatele
+# platformy, takže jejich kompromitace znamená kompromitaci celého běhu bez ohledu
+# na připnutí. Dependabot udržuje SHA aktuální.
 permissions:
   contents: read
 
@@ -179,7 +185,9 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Hledání tajemství v historii
-        uses: gitleaks/gitleaks-action@v2
+        # Připnuto na commit, ne na značku. Značku u cizí akce lze přesunout a tahle
+        # dostává GITHUB_TOKEN i licenční klíč — přepsaná značka by je odeslala komukoli.
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
@@ -191,7 +199,7 @@ jobs:
         run: docker build -t silentagro:scan --target runner .
 
       - name: Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: silentagro:scan
           format: sarif

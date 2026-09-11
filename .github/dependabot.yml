@@ -20,6 +20,11 @@ updates:
     directory: '/'
     schedule:
       interval: weekly
+    # Akce jsou připnuté na commit SHA. Bez tohohle by Dependabot připnuté akce
+    # neaktualizoval a bezpečnostní opravy by v nich zůstaly ležet.
+    groups:
+      akce:
+        patterns: ['*']
 
   - package-ecosystem: docker
     directory: '/'
