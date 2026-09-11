@@ -30,6 +30,25 @@ const schema = z
     MAIL_FROM: z.string().min(1, 'je povinná'),
     FARMER_EMAIL: z.string().email('musí být platný e-mail'),
 
+    /**
+     * Identita farmy. Objevuje se v patičce, v hlavičce a pod každým odeslaným
+     * e-mailem — kdyby byla v kódu, musel by ji nový provozovatel hledat
+     * na deseti místech.
+     */
+    FARM_NAME: z.string().min(1).default('SilentAgro'),
+    FARM_LEGAL_NAME: z.string().min(1).default('Silent Industries'),
+    FARM_COMPANY_ID: z.string().default(''),
+    FARM_PHONE: z.string().default(''),
+
+    /**
+     * Obchodní pravidla. Poplatek i hranice pro dopravu zdarma se u každé farmy
+     * liší, takže patří do konfigurace, ne mezi konstanty v doméně.
+     */
+    DELIVERY_FEE_CZK: z.coerce.number().min(0).default(60),
+    FREE_DELIVERY_ABOVE_CZK: z.coerce.number().min(0).default(600),
+    DELIVERY_RADIUS_KM: z.coerce.number().int().positive().default(20),
+    RESERVATION_HOLD_DAYS: z.coerce.number().int().positive().default(5),
+
     BANK_ACCOUNT_IBAN: z
       .string()
       .min(1, 'je povinná')

@@ -126,7 +126,7 @@ export class LoginUser {
     // Deaktivovaný účet se nepřihlásí. Hláška je jiná než u špatného hesla schválně:
     // člověk, kterému farmář účet zamkl, se to má dozvědět, ne tápat nad heslem.
     if (!user.isActive) {
-      throw new AuthError('Účet byl deaktivován. Ozvěte se prosím na farma@silentagro.cz.')
+      throw new AuthError('Účet byl deaktivován. Ozvěte se prosím farmě.')
     }
 
     return toAuthResult(user)

@@ -19,7 +19,7 @@ export default function ErrorPage({
     <div className="shell section" style={{ maxWidth: 640 }}>
       <h1 className="display h1">Něco se nepovedlo</h1>
       <p className="lead">
-        Zkuste to prosím znovu. Pokud potíže trvají, ozvěte se na farma@silentagro.cz.
+        Zkuste to prosím znovu. Pokud potíže trvají, ozvěte se nám — kontakt najdete v patičce.
       </p>
       <div className="hero__actions">
         <button type="button" className="btn btn--primary" onClick={reset}>

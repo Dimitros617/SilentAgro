@@ -8,6 +8,7 @@ import {
   SequentialTokenGenerator,
   fixedClock,
   makeBundle,
+  TEST_DELIVERY_POLICY,
   makeNotifier,
   makeVariety,
 } from './fakes'
@@ -29,6 +30,7 @@ const setup = (options: { varieties?: ReturnType<typeof makeVariety>[]; mailerFa
     clock: fixedClock(),
     tokenGenerator: new SequentialTokenGenerator(),
     notifier: makeNotifier(mailer, logger),
+    deliveryPolicy: TEST_DELIVERY_POLICY,
   })
 
   return { ...bundle, mailer, logger, useCase }

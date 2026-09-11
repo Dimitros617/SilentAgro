@@ -2,7 +2,7 @@ import { Order, OrderItem } from '@/domain/entities'
 import { DeliveryMethod, type PaymentMethod } from '@/domain/enums'
 import { ValidationError } from '@/domain/errors'
 import type { OrderNotifier } from '@/domain/ports/order-presentation'
-import type { Clock, TokenGenerator } from '@/domain/ports/services'
+import type { Clock, DeliveryPolicy, TokenGenerator } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
@@ -35,6 +35,8 @@ export interface ReserveOrderDeps {
    * a generuje QR kód, je věc infrastruktury.
    */
   readonly notifier: OrderNotifier
+  /** Ceník dopravy z konfigurace, ne konstanta v doméně. */
+  readonly deliveryPolicy: DeliveryPolicy
 }
 
 /**
@@ -84,7 +86,7 @@ export class ReserveOrder {
       }
 
       const subtotal = items.reduce((sum, item) => sum.plus(item.lineTotal), Money.zero())
-      const deliveryFee = Order.deliveryFeeFor(input.delivery, subtotal)
+      const deliveryFee = Order.deliveryFeeFor(input.delivery, subtotal, this.deps.deliveryPolicy)
 
       return repos.orders.create({
         customer,

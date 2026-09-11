@@ -64,6 +64,7 @@ export async function reserveOrderAction(
       clock: container.clock,
       tokenGenerator: container.tokenGenerator,
       notifier: container.notifier,
+      deliveryPolicy: container.delivery,
     }).execute({
       customer: parsed.data.customer,
       delivery: parsed.data.delivery,

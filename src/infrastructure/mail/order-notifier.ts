@@ -1,6 +1,13 @@
 import type { Order, User } from '@/domain/entities'
 import type { OrderNotifier, OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
-import type { Logger, Mailer, PaymentInstruction, SentMailPreview } from '@/domain/ports/services'
+import type {
+  DeliveryPolicy,
+  FarmIdentity,
+  Logger,
+  Mailer,
+  PaymentInstruction,
+  SentMailPreview,
+} from '@/domain/ports/services'
 import {
   renderCustomerConfirmation,
   renderFarmerMessage,
@@ -27,6 +34,8 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
       mailer: Mailer
       logger: Logger
       bank: BankAccount
+      farm: FarmIdentity
+      delivery: DeliveryPolicy
       config: OrderMailConfig
     },
   ) {}
@@ -46,12 +55,15 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
     const messages = [
       renderCustomerConfirmation({
         order,
+        farm: this.deps.farm,
+        delivery: this.deps.delivery,
         confirmationUrl: this.confirmationUrl(order),
         payment,
         qrPng,
       }),
       renderFarmerNotification({
         order,
+        farm: this.deps.farm,
         farmerEmail: this.deps.config.farmerEmail,
         adminUrl: this.adminUrl(),
       }),
@@ -70,7 +82,7 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
   }
 
   async notifyOrderCancelled(order: Order, reason: string): Promise<void> {
-    const message = renderOrderCancelled({ order, reason })
+    const message = renderOrderCancelled({ order, farm: this.deps.farm, reason })
     await this.trySend(message.to, () => this.deps.mailer.send(message), order.code)
   }
 
@@ -82,12 +94,14 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
    */
   async sendVerification(user: User, verificationUrl: string): Promise<void> {
     await this.deps.mailer.send(
-      renderVerification(user.name, user.email.value, verificationUrl),
+      renderVerification(this.deps.farm, user.name, user.email.value, verificationUrl),
     )
   }
 
   async sendMessage(user: User, subject: string, body: string): Promise<void> {
-    await this.deps.mailer.send(renderFarmerMessage(user.name, user.email.value, subject, body))
+    await this.deps.mailer.send(
+      renderFarmerMessage(this.deps.farm, user.name, user.email.value, subject, body),
+    )
   }
 
   async paymentInstructionFor(order: Order): Promise<PaymentInstruction | null> {
@@ -111,12 +125,15 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
 
     const customer = renderCustomerConfirmation({
       order,
+      farm: this.deps.farm,
+      delivery: this.deps.delivery,
       confirmationUrl: this.confirmationUrl(order),
       payment,
       qrPng: null,
     })
     const farmer = renderFarmerNotification({
       order,
+      farm: this.deps.farm,
       farmerEmail: this.deps.config.farmerEmail,
       adminUrl: this.adminUrl(),
     })

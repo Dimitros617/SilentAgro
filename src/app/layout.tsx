@@ -5,6 +5,7 @@ import { CartProvider } from '@/components/cart/cart-provider'
 import { SiteHeader } from '@/components/layout/site-header'
 import { ToastProvider } from '@/components/layout/toast'
 import { readSession } from '@/infrastructure/auth/session'
+import { getContainer } from '@/infrastructure/di/container'
 import './globals.css'
 import './ui.css'
 
@@ -22,13 +23,20 @@ const display = Space_Grotesk({
   display: 'swap',
 })
 
-export const metadata: Metadata = {
-  title: {
-    default: 'SilentAgro — brambory přímo z pole',
-    template: '%s — SilentAgro',
-  },
-  description:
-    'Rezervujte si brambory přímo z pole. Každý den vykopeme, zvážíme a hned zveřejníme, kolik je na skladě.',
+/**
+ * `generateMetadata` místo statického objektu: název farmy je v konfiguraci,
+ * takže ho nejde zapsat do konstanty vyhodnocené při sestavení.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const { farm } = getContainer()
+  return {
+    title: {
+      default: `${farm.name} — brambory přímo z pole`,
+      template: `%s — ${farm.name}`,
+    },
+    description:
+      'Rezervujte si brambory přímo z pole. Každý den vykopeme, zvážíme a hned zveřejníme, kolik je na skladě.',
+  }
 }
 
 export const viewport: Viewport = {
@@ -37,6 +45,7 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await readSession()
+  const { farm } = getContainer()
 
   return (
     <html lang="cs" className={`${sans.variable} ${display.variable}`}>
@@ -45,13 +54,18 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <CartProvider>
             <div className="page">
               <SiteHeader
+                farm={{ name: farm.name, legalName: farm.legalName }}
                 session={session ? { name: session.name, role: session.role } : null}
               />
               <main>{children}</main>
               <footer className="footer">
                 <div className="footer__inner">
-                  <span>SilentAgro by Silent Industries · IČO 12345678</span>
-                  <span>farma@silentagro.cz · +420 777 123 456</span>
+                  <span>
+                    {[`${farm.name} by ${farm.legalName}`, farm.companyId && `IČO ${farm.companyId}`]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                  <span>{[farm.email, farm.phone].filter(Boolean).join(' · ')}</span>
                 </div>
               </footer>
             </div>

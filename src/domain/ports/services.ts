@@ -74,3 +74,20 @@ export interface SentMailPreview {
   readonly subject: string
   readonly body: string
 }
+
+/** Kdo farmu provozuje. Ukazuje se v patičce a pod každým e-mailem. */
+export interface FarmIdentity {
+  readonly name: string
+  readonly legalName: string
+  readonly companyId: string
+  readonly email: string
+  readonly phone: string
+}
+
+/** Obchodní pravidla, která se u každé farmy liší. */
+export interface DeliveryPolicy {
+  readonly feeCzk: number
+  readonly freeAboveCzk: number
+  readonly radiusKm: number
+  readonly holdDays: number
+}

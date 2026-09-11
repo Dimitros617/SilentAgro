@@ -117,6 +117,7 @@ export class InMemoryOrderRepository implements OrderRepository {
       customer: input.customer,
       items: [...input.items],
       delivery: input.delivery,
+      deliveryFee: input.deliveryFee,
       payment: input.payment,
       status: OrderStatus.NEW,
       paidAt: null,
@@ -418,6 +419,23 @@ export class FakeUserNotifier {
   }
 }
 
+/** Identita farmy použitá v testech. */
+export const TEST_FARM = {
+  name: 'SilentAgro',
+  legalName: 'Silent Industries',
+  companyId: '12345678',
+  email: 'farma@silentagro.cz',
+  phone: '+420 777 123 456',
+} as const
+
+/** Ceník použitý v testech; odpovídá výchozím hodnotám z konfigurace. */
+export const TEST_DELIVERY_POLICY = {
+  feeCzk: 60,
+  freeAboveCzk: 600,
+  radiusKm: 20,
+  holdDays: 5,
+} as const
+
 export const TEST_BANK = {
   iban: Iban.of('CZ6508000000192000145399'),
   accountNumber: '2000145399/0800',
@@ -434,6 +452,8 @@ export function makeNotifier(mailer: Mailer, logger: Logger) {
     mailer,
     logger,
     bank: TEST_BANK,
+    farm: TEST_FARM,
+    delivery: TEST_DELIVERY_POLICY,
     config: { farmerEmail: 'farma@silentagro.cz', publicBaseUrl: 'https://silentagro.cz' },
   })
 }

@@ -1,10 +1,14 @@
 import type { Order } from '@/domain/entities'
 import { DELIVERY_LABELS, PAYMENT_LABELS, requiresTransfer } from '@/domain/enums'
-import type { MailAttachment, MailMessage } from '@/domain/ports/services'
+import type { DeliveryPolicy, FarmIdentity, MailAttachment, MailMessage } from '@/domain/ports/services'
 import type { PaymentDetails } from '@/infrastructure/payment/spayd'
 import { formatCzkPerKg, formatKg } from '@/shared/format'
 
 export const QR_CONTENT_ID = 'qr@silentagro'
+
+/** `SilentAgro by Silent Industries · +420 777 123 456` — jeden podpis pro všechny zprávy. */
+export const farmSignature = (farm: FarmIdentity): string =>
+  [`${farm.name} by ${farm.legalName}`, farm.phone].filter((part) => part.length > 0).join(' · ')
 
 /** Text od zákazníka jde do HTML e-mailu, takže se escapuje. */
 const escapeHtml = (raw: string): string =>
@@ -16,6 +20,8 @@ const escapeHtml = (raw: string): string =>
 
 export interface CustomerConfirmationInput {
   readonly order: Order
+  readonly farm: FarmIdentity
+  readonly delivery: DeliveryPolicy
   readonly confirmationUrl: string
   readonly payment: PaymentDetails | null
   /** `null`, když se QR nepodařilo vykreslit — e-mail pak jde bez přílohy. */
@@ -40,7 +46,7 @@ const paymentTextBlock = (payment: PaymentDetails, hasQr: boolean): string =>
     .join('\n')
 
 export function renderCustomerConfirmation(input: CustomerConfirmationInput): MailMessage {
-  const { order, confirmationUrl, payment, qrPng } = input
+  const { order, farm, delivery, confirmationUrl, payment, qrPng } = input
   const hasQr = payment !== null && qrPng !== null
 
   const text = [
@@ -51,11 +57,11 @@ export function renderCustomerConfirmation(input: CustomerConfirmationInput): Ma
     `Způsob převzetí: ${DELIVERY_LABELS[order.delivery]}.`,
     payment ? paymentTextBlock(payment, hasQr) : '',
     '',
-    'Zboží držíme 5 dní. Ozveme se s přesným termínem.',
+    `Zboží držíme ${delivery.holdDays} dní. Ozveme se s přesným termínem.`,
     '',
     `Podrobnosti rezervace: ${confirmationUrl}`,
     '',
-    'SilentAgro by Silent Industries · +420 777 123 456',
+    farmSignature(farm),
   ]
     .filter((line) => line !== '')
     .join('\n')
@@ -85,9 +91,9 @@ export function renderCustomerConfirmation(input: CustomerConfirmationInput): Ma
         Způsob převzetí: ${escapeHtml(DELIVERY_LABELS[order.delivery])}.
       </p>
       ${htmlPaymentBlock}
-      <p style="font-size:14px;line-height:1.6;color:#4a5750">Zboží držíme 5 dní. Ozveme se s přesným termínem.</p>
+      <p style="font-size:14px;line-height:1.6;color:#4a5750">Zboží držíme ${delivery.holdDays} dní. Ozveme se s přesným termínem.</p>
       <p style="font-size:14px"><a href="${escapeHtml(confirmationUrl)}">Podrobnosti rezervace</a></p>
-      <p style="font-size:13px;color:#6f7a72">SilentAgro by Silent Industries · +420 777 123 456</p>
+      <p style="font-size:13px;color:#6f7a72">${escapeHtml(farmSignature(farm))}</p>
     </div>
   `
 
@@ -104,7 +110,7 @@ export function renderCustomerConfirmation(input: CustomerConfirmationInput): Ma
 
   return {
     to: order.customer.email.value,
-    subject: `Potvrzení rezervace ${order.code} — SilentAgro`,
+    subject: `Potvrzení rezervace ${order.code} — ${farm.name}`,
     text,
     html,
     attachments,
@@ -113,12 +119,13 @@ export function renderCustomerConfirmation(input: CustomerConfirmationInput): Ma
 
 export interface FarmerNotificationInput {
   readonly order: Order
+  readonly farm: FarmIdentity
   readonly farmerEmail: string
   readonly adminUrl: string
 }
 
 export function renderFarmerNotification(input: FarmerNotificationInput): MailMessage {
-  const { order, farmerEmail, adminUrl } = input
+  const { order, farm, farmerEmail, adminUrl } = input
 
   const text = [
     `${order.customer.name} · ${order.customer.email.value}${order.customer.phone ? ` · ${order.customer.phone}` : ''}`,
@@ -146,11 +153,12 @@ export function renderFarmerNotification(input: FarmerNotificationInput): MailMe
 
 export interface OrderCancelledInput {
   readonly order: Order
+  readonly farm: FarmIdentity
   readonly reason: string
 }
 
 export function renderOrderCancelled(input: OrderCancelledInput): MailMessage {
-  const { order, reason } = input
+  const { order, farm, reason } = input
 
   const text = [
     `Dobrý den, ${order.customer.name},`,
@@ -169,7 +177,7 @@ export function renderOrderCancelled(input: OrderCancelledInput): MailMessage {
     '',
     'Brambory jsme vrátili zpět do nabídky — mrkněte na burzu, jestli si nevyberete jinou odrůdu.',
     '',
-    'SilentAgro by Silent Industries · +420 777 123 456',
+    farmSignature(farm),
   ]
     .filter((line) => line !== '')
     .join('\n')
@@ -189,19 +197,19 @@ export function renderOrderCancelled(input: OrderCancelledInput): MailMessage {
           ? 'Pokud jste už zaplatili, ozvěte se nám a peníze obratem vrátíme.'
           : 'Nic jste neplatili, takže se nic nevrací.'}
       </p>
-      <p style="font-size:13px;color:#6f7a72">SilentAgro by Silent Industries · +420 777 123 456</p>
+      <p style="font-size:13px;color:#6f7a72">${escapeHtml(farmSignature(farm))}</p>
     </div>
   `
 
   return {
     to: order.customer.email.value,
-    subject: `Rezervace ${order.code} byla zrušena — SilentAgro`,
+    subject: `Rezervace ${order.code} byla zrušena — ${farm.name}`,
     text,
     html,
   }
 }
 
-export function renderVerification(name: string, to: string, verificationUrl: string): MailMessage {
+export function renderVerification(farm: FarmIdentity, name: string, to: string, verificationUrl: string): MailMessage {
   const text = [
     `Dobrý den, ${name},`,
     '',
@@ -210,12 +218,12 @@ export function renderVerification(name: string, to: string, verificationUrl: st
     '',
     'Odkaz platí 48 hodin. Pokud jste si účet u nás nezakládali, zprávu ignorujte.',
     '',
-    'SilentAgro by Silent Industries',
+    farmSignature(farm),
   ].join('\n')
 
   return {
     to,
-    subject: 'Potvrďte svůj e-mail — SilentAgro',
+    subject: `Potvrďte svůj e-mail — ${farm.name}`,
     text,
     html: `
       <div style="font-family:system-ui,sans-serif;color:#14201a;max-width:560px">
@@ -228,7 +236,7 @@ export function renderVerification(name: string, to: string, verificationUrl: st
   }
 }
 
-export function renderFarmerMessage(name: string, to: string, subject: string, body: string): MailMessage {
+export function renderFarmerMessage(farm: FarmIdentity, name: string, to: string, subject: string, body: string): MailMessage {
   return {
     to,
     subject,
@@ -237,7 +245,7 @@ export function renderFarmerMessage(name: string, to: string, subject: string, b
       <div style="font-family:system-ui,sans-serif;color:#14201a;max-width:560px">
         <p style="font-size:15px;line-height:1.6">Dobrý den, ${escapeHtml(name)},</p>
         <p style="font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(body)}</p>
-        <p style="font-size:13px;color:#6f7a72">SilentAgro by Silent Industries · +420 777 123 456</p>
+        <p style="font-size:13px;color:#6f7a72">${escapeHtml(farmSignature(farm))}</p>
       </div>
     `,
   }

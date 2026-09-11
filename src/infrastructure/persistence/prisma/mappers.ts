@@ -120,6 +120,7 @@ export const toOrder = (row: OrderRow & { items: OrderItemRow[] }): Order =>
     },
     items: row.items.map(toOrderItem),
     delivery: row.deliveryMethod as DeliveryMethod,
+    deliveryFee: toMoney(row.deliveryFeeCzk),
     payment: row.paymentMethod as PaymentMethod,
     status: row.status as OrderStatus,
     paidAt: row.paidAt,

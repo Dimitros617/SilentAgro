@@ -19,16 +19,25 @@ import {
   PaymentMethod,
 } from '@/domain/enums'
 
-const FREE_DELIVERY_ABOVE_CZK = 600
-const DELIVERY_FEE_CZK = 60
-
 const formatCzk = (value: number) =>
   `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: value % 1 === 0 ? 0 : 2, minimumFractionDigits: value % 1 === 0 ? 0 : 2 }).format(value)} Kč`
 
 const formatKg = (value: number) =>
   `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 1 }).format(value)} kg`
 
-export function Checkout({ varieties }: { varieties: VarietyView[] }) {
+export interface CheckoutPolicy {
+  feeCzk: number
+  freeAboveCzk: number
+  holdDays: number
+}
+
+export function Checkout({
+  varieties,
+  policy,
+}: {
+  varieties: VarietyView[]
+  policy: CheckoutPolicy
+}) {
   const { lines, dispatch } = useCart()
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -61,8 +70,8 @@ export function Checkout({ varieties }: { varieties: VarietyView[] }) {
    * z vlastních cen — klientská čísla se do objednávky nikdy nedostanou.
    */
   const deliveryFee =
-    form.delivery === DeliveryMethod.LOCAL_DELIVERY && subtotal <= FREE_DELIVERY_ABOVE_CZK
-      ? DELIVERY_FEE_CZK
+    form.delivery === DeliveryMethod.LOCAL_DELIVERY && subtotal <= policy.freeAboveCzk
+      ? policy.feeCzk
       : 0
 
   const update = (patch: Partial<CheckoutForm>) => setForm((current) => ({ ...current, ...patch }))
@@ -171,7 +180,7 @@ export function Checkout({ varieties }: { varieties: VarietyView[] }) {
                 className={errors.phone ? 'input input--error' : 'input'}
                 value={form.phone}
                 onChange={(event) => update({ phone: event.target.value })}
-                placeholder="+420 777 123 456"
+                placeholder="+420 123 456 789"
                 autoComplete="tel"
               />
               {errors.phone ? <span className="error-text">{errors.phone}</span> : null}
@@ -272,7 +281,7 @@ export function Checkout({ varieties }: { varieties: VarietyView[] }) {
         </button>
 
         <p style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 12, lineHeight: 1.5 }}>
-          Potvrzení dorazí vám i farmáři e-mailem. Zboží držíme 5 dní.
+          Potvrzení dorazí vám i farmáři e-mailem. Zboží držíme {policy.holdDays} dní.
         </p>
       </div>
     </div>

@@ -34,8 +34,17 @@ const makeUseCase = (mailer: Mailer = new CollectingMailer()) =>
       mailer,
       logger: silentLogger,
       bank,
+      farm: {
+        name: 'SilentAgro',
+        legalName: 'Silent Industries',
+        companyId: '12345678',
+        email: 'farma@silentagro.cz',
+        phone: '+420 777 123 456',
+      },
+      delivery: { feeCzk: 60, freeAboveCzk: 600, radiusKm: 20, holdDays: 5 },
       config: { farmerEmail: 'farma@silentagro.cz', publicBaseUrl: 'https://silentagro.cz' },
     }),
+    deliveryPolicy: { feeCzk: 60, freeAboveCzk: 600, radiusKm: 20, holdDays: 5 },
   })
 
 async function seedVariety(stockKg: number, priceCzk = 20): Promise<number> {

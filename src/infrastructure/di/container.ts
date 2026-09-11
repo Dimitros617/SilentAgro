@@ -1,7 +1,16 @@
 import 'server-only'
 import { randomBytes } from 'node:crypto'
 import type { OrderNotifier, OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
-import type { Clock, Logger, Mailer, PasswordHasher, TokenGenerator, TokenService } from '@/domain/ports/services'
+import type {
+  Clock,
+  DeliveryPolicy,
+  FarmIdentity,
+  Logger,
+  Mailer,
+  PasswordHasher,
+  TokenGenerator,
+  TokenService,
+} from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { Iban } from '@/domain/value-objects/iban'
 import { BcryptPasswordHasher } from '@/infrastructure/auth/bcrypt-password-hasher'
@@ -26,6 +35,8 @@ export interface Container {
   readonly tokenGenerator: TokenGenerator
   readonly logger: Logger
   readonly bank: BankAccount
+  readonly farm: FarmIdentity
+  readonly delivery: DeliveryPolicy
   readonly config: {
     readonly farmerEmail: string
     readonly publicBaseUrl: string
@@ -72,10 +83,27 @@ function build(): Container {
     iban: Iban.of(env.BANK_ACCOUNT_IBAN),
     accountNumber: env.BANK_ACCOUNT_NUMBER,
   }
+  const farm: FarmIdentity = {
+    name: env.FARM_NAME,
+    legalName: env.FARM_LEGAL_NAME,
+    companyId: env.FARM_COMPANY_ID,
+    email: env.FARMER_EMAIL,
+    phone: env.FARM_PHONE,
+  }
+
+  const delivery: DeliveryPolicy = {
+    feeCzk: env.DELIVERY_FEE_CZK,
+    freeAboveCzk: env.FREE_DELIVERY_ABOVE_CZK,
+    radiusKm: env.DELIVERY_RADIUS_KM,
+    holdDays: env.RESERVATION_HOLD_DAYS,
+  }
+
   const notifier = new MailOrderNotifier({
     mailer,
     logger: consoleLogger,
     bank,
+    farm,
+    delivery,
     config: { farmerEmail: env.FARMER_EMAIL, publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/+$/, '') },
   })
 
@@ -91,6 +119,8 @@ function build(): Container {
     tokenGenerator,
     logger: consoleLogger,
     bank,
+    farm,
+    delivery,
     config: {
       farmerEmail: env.FARMER_EMAIL,
       publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/+$/, ''),

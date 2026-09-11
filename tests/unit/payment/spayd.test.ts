@@ -41,6 +41,7 @@ const orderWith = (payment: PaymentMethod, kg = 2.5, czkPerKg = 22) =>
       }),
     ],
     delivery: DeliveryMethod.PICKUP,
+    deliveryFee: Money.zero(),
     payment,
     status: OrderStatus.NEW,
     paidAt: null,

@@ -5,6 +5,8 @@ import { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
 
+const POLICY = { feeCzk: 60, freeAboveCzk: 600 } as const
+
 const item = (name: string, czkPerKg: number, kg: number, varietyId = 1) =>
   OrderItem.create({
     varietyId,
@@ -17,8 +19,11 @@ const order = (
   items: OrderItem[],
   delivery: DeliveryMethod = DeliveryMethod.PICKUP,
   overrides: Partial<{ status: OrderStatus; paidAt: Date | null }> = {},
-) =>
-  Order.rehydrate({
+) => {
+  // Poplatek se ukládá spočítaný ze skutečného mezisoučtu, stejně jako při rezervaci.
+  const subtotal = items.reduce((sum, item) => sum.plus(item.lineTotal), Money.zero())
+
+  return Order.rehydrate({
     id: 1,
     code: '#2610',
     publicToken: 'token'.repeat(6),
@@ -30,6 +35,7 @@ const order = (
     },
     items,
     delivery,
+    deliveryFee: Order.deliveryFeeFor(delivery, subtotal, POLICY),
     payment: PaymentMethod.QR_CODE,
     status: overrides.status ?? OrderStatus.NEW,
     paidAt: overrides.paidAt ?? null,
@@ -38,6 +44,7 @@ const order = (
     userId: null,
     createdAt: new Date('2026-09-10T18:00:00Z'),
   })
+}
 
 describe('OrderItem', () => {
   it('spočítá cenu řádku', () => {
@@ -140,8 +147,8 @@ describe('Order stav zaplacení', () => {
 
 describe('Order.deliveryFeeFor', () => {
   it('je čistá funkce použitelná před vznikem objednávky', () => {
-    expect(Order.deliveryFeeFor(DeliveryMethod.PICKUP, Money.fromCzk(100)).czk).toBe(0)
-    expect(Order.deliveryFeeFor(DeliveryMethod.LOCAL_DELIVERY, Money.fromCzk(100)).czk).toBe(60)
-    expect(Order.deliveryFeeFor(DeliveryMethod.LOCAL_DELIVERY, Money.fromCzk(600.5)).czk).toBe(0)
+    expect(Order.deliveryFeeFor(DeliveryMethod.PICKUP, Money.fromCzk(100), POLICY).czk).toBe(0)
+    expect(Order.deliveryFeeFor(DeliveryMethod.LOCAL_DELIVERY, Money.fromCzk(100), POLICY).czk).toBe(60)
+    expect(Order.deliveryFeeFor(DeliveryMethod.LOCAL_DELIVERY, Money.fromCzk(600.5), POLICY).czk).toBe(0)
   })
 })

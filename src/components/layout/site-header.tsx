@@ -12,6 +12,11 @@ export interface HeaderSession {
   role: 'CUSTOMER' | 'FARMER'
 }
 
+export interface HeaderFarm {
+  name: string
+  legalName: string
+}
+
 const PUBLIC_NAV = [
   { href: '/', label: 'Domů' },
   { href: '/burza', label: 'Burza' },
@@ -26,7 +31,7 @@ function AuthPrompt({ onOpen }: { onOpen: () => void }) {
   return null
 }
 
-export function SiteHeader({ session }: { session: HeaderSession | null }) {
+export function SiteHeader({ farm, session }: { farm: HeaderFarm; session: HeaderSession | null }) {
   const pathname = usePathname()
   const { count } = useCart()
   const [authOpen, setAuthOpen] = useState(false)
@@ -39,12 +44,12 @@ export function SiteHeader({ session }: { session: HeaderSession | null }) {
       <div className="header__inner">
         <Link href="/" className="brand">
           <span className="brand__mark" aria-hidden="true">
-            S
+            {farm.name.charAt(0).toUpperCase()}
           </span>
           <span>
-            <span className="brand__name">SilentAgro</span>
+            <span className="brand__name">{farm.name}</span>
             <span className="brand__sub" style={{ display: 'block' }}>
-              by Silent Industries
+              by {farm.legalName}
             </span>
           </span>
         </Link>

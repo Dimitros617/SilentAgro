@@ -1,5 +1,6 @@
 import type { DeliveryMethod, OrderStatus, PaymentMethod } from '@/domain/enums'
 import { DeliveryMethod as Delivery } from '@/domain/enums'
+import type { DeliveryPolicy } from '@/domain/ports/services'
 import type { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
@@ -59,6 +60,12 @@ export interface OrderProps {
   readonly customer: OrderCustomer
   readonly items: readonly OrderItem[]
   readonly delivery: DeliveryMethod
+  /**
+   * Poplatek **tak, jak byl účtován**, ne dopočítaný z aktuálního ceníku.
+   * Když provozovatel později dopravu zdraží, historická objednávka musí zůstat
+   * na původní částce — stejně jako cena odrůdy v položkách.
+   */
+  readonly deliveryFee: Money
   readonly payment: PaymentMethod
   readonly status: OrderStatus
   readonly paidAt: Date | null
@@ -69,10 +76,6 @@ export interface OrderProps {
 }
 
 export class Order {
-  /** Nad touto částkou je rozvoz zdarma. Hranice je ostrá: přesně 600 Kč se ještě účtuje. */
-  static readonly FREE_DELIVERY_THRESHOLD = Money.fromCzk(600)
-  static readonly DELIVERY_FEE = Money.fromCzk(60)
-
   private constructor(private readonly props: OrderProps) {}
 
   static rehydrate(props: OrderProps): Order {
@@ -80,12 +83,21 @@ export class Order {
   }
 
   /**
-   * Cena dopravy. Je to statická funkce, protože ji potřebuje spočítat i košík, kde
-   * objednávka ještě neexistuje — a obě místa musí dojít ke stejnému číslu.
+   * Cena dopravy podle platných pravidel. Statická funkce, protože ji potřebuje
+   * spočítat i košík, kde objednávka ještě neexistuje — a obě místa musí dojít
+   * ke stejnému číslu.
+   *
+   * Hranice je ostrá: přesně na hodnotě `freeAboveCzk` se ještě účtuje.
    */
-  static deliveryFeeFor(delivery: DeliveryMethod, subtotal: Money): Money {
+  static deliveryFeeFor(
+    delivery: DeliveryMethod,
+    subtotal: Money,
+    policy: Pick<DeliveryPolicy, 'feeCzk' | 'freeAboveCzk'>,
+  ): Money {
     if (delivery !== Delivery.LOCAL_DELIVERY) return Money.zero()
-    return subtotal.gt(Order.FREE_DELIVERY_THRESHOLD) ? Money.zero() : Order.DELIVERY_FEE
+    return subtotal.gt(Money.fromCzk(policy.freeAboveCzk))
+      ? Money.zero()
+      : Money.fromCzk(policy.feeCzk)
   }
 
   get id(): number {
@@ -157,7 +169,7 @@ export class Order {
   }
 
   get deliveryFee(): Money {
-    return Order.deliveryFeeFor(this.props.delivery, this.subtotal)
+    return this.props.deliveryFee
   }
 
   get total(): Money {

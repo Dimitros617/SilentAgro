@@ -13,14 +13,22 @@ export const metadata: Metadata = {
 export default async function CartPage() {
   // Ceny a názvy se berou ze serveru, ne z košíku v prohlížeči — mezi vložením
   // do košíku a odesláním mohl farmář cenu změnit.
-  const varieties = await new ListVarieties({ uow: getContainer().uow }).execute()
+  const container = getContainer()
+  const varieties = await new ListVarieties({ uow: container.uow }).execute()
 
   return (
     <div className="shell section" style={{ maxWidth: 1000 }}>
       <h1 className="display h1" style={{ marginBottom: 26 }}>
         Rezervace
       </h1>
-      <Checkout varieties={varieties} />
+      <Checkout
+        varieties={varieties}
+        policy={{
+          feeCzk: container.delivery.feeCzk,
+          freeAboveCzk: container.delivery.freeAboveCzk,
+          holdDays: container.delivery.holdDays,
+        }}
+      />
     </div>
   )
 }

@@ -12,7 +12,7 @@ import { getContainer } from '@/infrastructure/di/container'
  */
 export const dynamic = 'force-dynamic'
 
-const STEPS = [
+const steps = (radiusKm: number) => [
   {
     number: '01',
     title: 'Podívejte se do skladu',
@@ -31,7 +31,7 @@ const STEPS = [
   {
     number: '04',
     title: 'Vyzvednutí či rozvoz',
-    body: 'Osobně na farmě, nebo dovezeme do 20 km.',
+    body: `Osobně na farmě, nebo dovezeme do ${radiusKm} km.`,
   },
 ]
 
@@ -95,7 +95,7 @@ export default async function HomePage() {
           Jak to funguje
         </h2>
         <div className="grid-auto grid-auto--narrow">
-          {STEPS.map((step) => (
+          {steps(container.delivery.radiusKm).map((step) => (
             <div key={step.number} className="card">
               <span
                 className="display"

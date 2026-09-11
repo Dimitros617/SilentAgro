@@ -9,6 +9,15 @@ import { renderCustomerConfirmation, renderFarmerNotification } from '@/infrastr
 import { buildPaymentDetails } from '@/infrastructure/payment/spayd'
 
 const bank = { iban: Iban.of('CZ6508000000192000145399'), accountNumber: '2000145399/0800' }
+const FARM = {
+  name: 'SilentAgro',
+  legalName: 'Silent Industries',
+  companyId: '12345678',
+  email: 'farma@silentagro.cz',
+  phone: '+420 777 123 456',
+} as const
+const DELIVERY = { feeCzk: 60, freeAboveCzk: 600, radiusKm: 20, holdDays: 5 } as const
+
 const CONFIRM_URL = 'https://silentagro.cz/rezervace/abc123'
 const ADMIN_URL = 'https://silentagro.cz/admin/objednavky'
 
@@ -32,6 +41,7 @@ const makeOrder = (payment: PaymentMethod, note = 'Přijedu v sobotu dopoledne')
       }),
     ],
     delivery: DeliveryMethod.PICKUP,
+    deliveryFee: Money.zero(),
     payment,
     status: OrderStatus.NEW,
     paidAt: null,
@@ -46,6 +56,8 @@ const qrPng = Buffer.from('fake-png-bytes')
 describe('renderCustomerConfirmation', () => {
   it('adresuje zákazníkovi a nese kód, položky i částku', () => {
     const mail = renderCustomerConfirmation({
+      farm: FARM,
+      delivery: DELIVERY,
       order: makeOrder(PaymentMethod.CASH),
       confirmationUrl: CONFIRM_URL,
       payment: null,
@@ -62,6 +74,8 @@ describe('renderCustomerConfirmation', () => {
 
   it('u platby hotově neobsahuje platební údaje ani přílohu', () => {
     const mail = renderCustomerConfirmation({
+      farm: FARM,
+      delivery: DELIVERY,
       order: makeOrder(PaymentMethod.CASH),
       confirmationUrl: CONFIRM_URL,
       payment: null,
@@ -75,6 +89,8 @@ describe('renderCustomerConfirmation', () => {
   it('u QR platby nese přílohu s QR kódem a odkazuje na ni přes cid', () => {
     const order = makeOrder(PaymentMethod.QR_CODE)
     const mail = renderCustomerConfirmation({
+      farm: FARM,
+      delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
       payment: buildPaymentDetails(order, bank),
@@ -90,6 +106,8 @@ describe('renderCustomerConfirmation', () => {
     // kdo má vypnuté obrázky nebo čte text, musí zaplatit stejně snadno
     const order = makeOrder(PaymentMethod.BANK_TRANSFER)
     const mail = renderCustomerConfirmation({
+      farm: FARM,
+      delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
       payment: buildPaymentDetails(order, bank),
@@ -105,6 +123,8 @@ describe('renderCustomerConfirmation', () => {
   it('při nedostupném QR obrázku se e-mail pošle bez přílohy, ale s údaji', () => {
     const order = makeOrder(PaymentMethod.QR_CODE)
     const mail = renderCustomerConfirmation({
+      farm: FARM,
+      delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
       payment: buildPaymentDetails(order, bank),
@@ -119,6 +139,8 @@ describe('renderCustomerConfirmation', () => {
   it('do HTML nepropustí neošetřený obsah od zákazníka', () => {
     const order = makeOrder(PaymentMethod.CASH, '<script>alert(1)</script>')
     const mail = renderCustomerConfirmation({
+      farm: FARM,
+      delivery: DELIVERY,
       order,
       confirmationUrl: CONFIRM_URL,
       payment: null,
@@ -132,6 +154,7 @@ describe('renderCustomerConfirmation', () => {
 describe('renderFarmerNotification', () => {
   it('míří na adresu farmy a nese kontakt i položky', () => {
     const mail = renderFarmerNotification({
+      farm: FARM,
       order: makeOrder(PaymentMethod.CASH),
       farmerEmail: 'farma@silentagro.cz',
       adminUrl: ADMIN_URL,
@@ -147,6 +170,7 @@ describe('renderFarmerNotification', () => {
 
   it('nese poznámku zákazníka', () => {
     const mail = renderFarmerNotification({
+      farm: FARM,
       order: makeOrder(PaymentMethod.CASH),
       farmerEmail: 'farma@silentagro.cz',
       adminUrl: ADMIN_URL,
@@ -156,6 +180,7 @@ describe('renderFarmerNotification', () => {
 
   it('prázdnou poznámku vypíše jako pomlčku', () => {
     const mail = renderFarmerNotification({
+      farm: FARM,
       order: makeOrder(PaymentMethod.CASH, ''),
       farmerEmail: 'farma@silentagro.cz',
       adminUrl: ADMIN_URL,
@@ -165,6 +190,7 @@ describe('renderFarmerNotification', () => {
 
   it('upozorní, že objednávka čeká na platbu převodem', () => {
     const mail = renderFarmerNotification({
+      farm: FARM,
       order: makeOrder(PaymentMethod.QR_CODE),
       farmerEmail: 'farma@silentagro.cz',
       adminUrl: ADMIN_URL,

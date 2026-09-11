@@ -8,19 +8,55 @@ Vznikla podle prototypu `SilentAgro.dc.html` z Claude Design.
 
 ## Rozjezd
 
-Potřebujete Docker. Nic jiného.
+Potřebujete Docker. Nic jiného — Node ani databázi instalovat nemusíte.
 
 ```bash
 cp .env.example .env
-# vyplňte AUTH_SECRET, MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, SEED_FARMER_PASSWORD
-#   AUTH_SECRET vygenerujete: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
-
-docker compose up -d --build
-docker compose --profile seed run --rm seeder     # naplní ukázková data
 ```
 
-Aplikace běží na <http://localhost:3000>, farmář se přihlásí jako
-`farma@silentagro.cz` heslem, které jste dali do `SEED_FARMER_PASSWORD`.
+V `.env` vyplňte sekci **POVINNÉ** (je nahoře, ostatní má výchozí hodnoty):
+
+| Proměnná | Jak ji získat |
+|---|---|
+| `MYSQL_ROOT_PASSWORD` | `node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"` |
+| `MYSQL_PASSWORD` | totéž, jiná hodnota |
+| `AUTH_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"` |
+| `SEED_FARMER_PASSWORD` | vaše heslo do administrace |
+| `BANK_ACCOUNT_IBAN` a `BANK_ACCOUNT_NUMBER` | účet farmy; předvyplněný je testovací |
+
+Nemáte-li po ruce Node, hodnoty vygenerujete i v Dockeru:
+
+```bash
+docker run --rm node:22-alpine node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+```
+
+Pak už jen:
+
+```bash
+docker compose up -d --build
+docker compose --profile seed run --rm seeder     # ukázková data
+```
+
+Aplikace běží na <http://localhost:3000>. Farmář se přihlásí adresou z `FARMER_EMAIL`
+(výchozí `farma@silentagro.cz`) a heslem ze `SEED_FARMER_PASSWORD`.
+
+Chybějící povinná proměnná sestavu **nenastartuje** a compose napíše, která to je —
+tiše běžet s prázdným heslem nebude.
+
+### Co si nastavíte bez zásahu do kódu
+
+Všechno podstatné je v `.env`, rozdělené do sekcí:
+
+- **Identita farmy** — název, firma, IČO, telefon, kontaktní e-mail. Promítne se
+  do patičky, do hlavičky i do podpisu pod každým odeslaným e-mailem.
+- **Pošta** — vlastní SMTP server, nebo Mailpit pro zkoušení bez odesílání.
+- **Obchodní pravidla** — poplatek za rozvoz, hranice pro dopravu zdarma, dojezd
+  v kilometrech, jak dlouho se rezervace drží.
+- **Bankovní účet** — IBAN a číslo účtu pro QR platby.
+- **Provoz** — veřejná adresa, port, limity pokusů o přihlášení.
+
+Texty, které konfigurace nepokrývá (popisky sekcí, znění novinek), jsou v `src/app`
+a v `src/infrastructure/mail/templates.ts`.
 
 Chcete-li si prohlédnout odesílanou poštu, přidejte odchytávač:
 
