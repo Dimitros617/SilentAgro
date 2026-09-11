@@ -9,6 +9,8 @@ import { register } from '@/instrumentation'
  */
 
 const valid = {
+  // `NODE_ENV` vyžaduje typ ProcessEnv; aplikace se jím neřídí, čte APP_ENV.
+  NODE_ENV: 'test',
   NEXT_RUNTIME: 'nodejs',
   DATABASE_URL: 'mysql://u:p@db:3306/x',
   AUTH_SECRET: 'x'.repeat(32),
@@ -21,7 +23,7 @@ const valid = {
 
 function withEnv(overrides: Record<string, string>) {
   const previous = process.env
-  process.env = { ...valid, ...overrides } as NodeJS.ProcessEnv
+  process.env = { ...valid, ...overrides } as unknown as NodeJS.ProcessEnv
   resetEnvCache()
   return () => {
     process.env = previous
