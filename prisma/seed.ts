@@ -146,6 +146,14 @@ const ORDERS = [
 const FREE_DELIVERY_ABOVE = 600
 const DELIVERY_FEE = 60
 
+/**
+ * Účet farmáře se zakládá na adresu z `FARMER_EMAIL`, ne na napevno zapsanou.
+ * Jinak by si nový provozovatel nastavil svoji adresu a přihlašoval se pořád
+ * pod cizí, kterou v konfiguraci nikde nevidí.
+ */
+const farmerEmail = (): string => process.env.FARMER_EMAIL ?? 'farma@silentagro.cz'
+const farmerName = (): string => process.env.SEED_FARMER_NAME ?? 'Farmář'
+
 export async function seed(prisma: PrismaClient, farmerPassword: string): Promise<void> {
   if (!farmerPassword || farmerPassword.length < 8) {
     throw new Error(
@@ -158,12 +166,15 @@ export async function seed(prisma: PrismaClient, farmerPassword: string): Promis
   // odkaz sám sobě nedává smysl.
   const verifiedAt = new Date('2026-08-01T08:00:00.000Z')
 
+  const email = farmerEmail()
+  const name = farmerName()
+
   const farmer = await prisma.user.upsert({
-    where: { email: 'farma@silentagro.cz' },
-    update: { name: 'Farmář Milan', role: 'FARMER', verifiedAt },
+    where: { email },
+    update: { name, role: 'FARMER', verifiedAt },
     create: {
-      email: 'farma@silentagro.cz',
-      name: 'Farmář Milan',
+      email,
+      name,
       role: 'FARMER',
       verifiedAt,
       passwordHash: await bcrypt.hash(farmerPassword, 12),
@@ -302,7 +313,7 @@ async function main(): Promise<void> {
       prisma.order.count(),
     ])
     console.info(
-      `Seed hotov: ${varieties} odrůd, ${news} novinek, ${orders} objednávek, farmář farma@silentagro.cz`,
+      `Seed hotov: ${varieties} odrůd, ${news} novinek, ${orders} objednávek, farmář ${farmerEmail()}`,
     )
   } finally {
     await prisma.$disconnect()

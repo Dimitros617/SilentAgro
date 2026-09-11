@@ -72,6 +72,14 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-SilentAgro <farma@silentagro.cz>}
       FARMER_EMAIL: ${FARMER_EMAIL:-farma@silentagro.cz}
+      FARM_NAME: ${FARM_NAME:-SilentAgro}
+      FARM_LEGAL_NAME: ${FARM_LEGAL_NAME:-Silent Industries}
+      FARM_COMPANY_ID: ${FARM_COMPANY_ID:-}
+      FARM_PHONE: ${FARM_PHONE:-}
+      DELIVERY_FEE_CZK: ${DELIVERY_FEE_CZK:-60}
+      FREE_DELIVERY_ABOVE_CZK: ${FREE_DELIVERY_ABOVE_CZK:-600}
+      DELIVERY_RADIUS_KM: ${DELIVERY_RADIUS_KM:-20}
+      RESERVATION_HOLD_DAYS: ${RESERVATION_HOLD_DAYS:-5}
       BANK_ACCOUNT_IBAN: ${BANK_ACCOUNT_IBAN:?nastavte BANK_ACCOUNT_IBAN}
       BANK_ACCOUNT_NUMBER: ${BANK_ACCOUNT_NUMBER:?nastavte BANK_ACCOUNT_NUMBER}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
@@ -115,6 +123,9 @@ services:
     environment:
       <<: *db-url
       SEED_FARMER_PASSWORD: ${SEED_FARMER_PASSWORD:?nastavte SEED_FARMER_PASSWORD}
+      # Účet farmáře se zakládá na tuhle adresu, ne na napevno zapsanou.
+      FARMER_EMAIL: ${FARMER_EMAIL:-farma@silentagro.cz}
+      SEED_FARMER_NAME: ${SEED_FARMER_NAME:-Farmář}
     command: ['npx', 'tsx', 'prisma/seed.ts']
     depends_on:
       db:
