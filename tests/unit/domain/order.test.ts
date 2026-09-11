@@ -33,6 +33,8 @@ const order = (
     payment: PaymentMethod.QR_CODE,
     status: overrides.status ?? OrderStatus.NEW,
     paidAt: overrides.paidAt ?? null,
+    cancelledAt: null,
+    cancellationReason: null,
     userId: null,
     createdAt: new Date('2026-09-10T18:00:00Z'),
   })

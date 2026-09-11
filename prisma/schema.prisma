@@ -48,15 +48,29 @@ enum FieldStatus {
 }
 
 model User {
-  id           Int        @id @default(autoincrement())
-  email        String     @unique @db.VarChar(255)
-  passwordHash String     @map("password_hash") @db.VarChar(255)
-  name         String     @db.VarChar(120)
-  role         UserRole   @default(CUSTOMER)
-  createdAt    DateTime   @default(now()) @map("created_at")
-  orders       Order[]
-  newsPosts    NewsPost[]
+  id           Int      @id @default(autoincrement())
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  name         String   @db.VarChar(120)
+  role         UserRole @default(CUSTOMER)
+  createdAt    DateTime @default(now()) @map("created_at")
 
+  // Kdy si zákazník potvrdil e-mail. NULL = neověřeno. Datum místo booleovské
+  // hodnoty nese příznak i okamžik v jednom sloupci, který se nemůže rozejít sám se sebou.
+  verifiedAt DateTime? @map("verified_at")
+
+  // Jednorázový token z ověřovacího e-mailu. Po použití se maže, aby odkaz
+  // ze staré zprávy neplatil napořád.
+  verificationToken     String?   @unique @map("verification_token") @db.VarChar(64)
+  verificationExpiresAt DateTime? @map("verification_expires_at")
+
+  // Deaktivovaný účet se nepřihlásí, ale jeho objednávky zůstávají čitelné.
+  deactivatedAt DateTime? @map("deactivated_at")
+
+  orders    Order[]
+  newsPosts NewsPost[]
+
+  @@index([deactivatedAt])
   @@map("users")
 }
 
@@ -104,6 +118,12 @@ model Order {
   // nese příznak i časové razítko v jednom sloupci, který se nemůže rozejít sám se sebou.
   paidAt DateTime? @map("paid_at")
 
+  // Zrušení je nezávislé na `status`: zrušit lze objednávku v jakémkoli stavu
+  // a informace, v jakém stavu byla, se tím nemá ztratit. Množství se vrací
+  // do skladu právě jednou — `cancelledAt` je zároveň pojistkou proti dvojímu vrácení.
+  cancelledAt        DateTime? @map("cancelled_at")
+  cancellationReason String?   @map("cancellation_reason") @db.Text
+
   userId    Int?     @map("user_id")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -113,6 +133,7 @@ model Order {
   @@index([status, createdAt])
   @@index([paidAt])
   @@index([createdAt])
+  @@index([cancelledAt])
   @@map("orders")
 }
 

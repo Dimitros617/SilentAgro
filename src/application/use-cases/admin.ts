@@ -16,7 +16,7 @@ import {
   PAYMENT_LABELS,
   requiresTransfer,
 } from '@/domain/enums'
-import { NotFoundError, ValidationError } from '@/domain/errors'
+import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
 import type { Clock } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { HexColor } from '@/domain/value-objects/hex-color'
@@ -24,7 +24,7 @@ import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
 import { formatCzk, formatCzkPerKg, formatDateCs, formatDateTimeCs, formatKg, formatKgNumber } from '@/shared/format'
 
-const toOrderRow = (order: Order): OrderRowView => ({
+export const toOrderRow = (order: Order): OrderRowView => ({
   id: order.id,
   code: order.code,
   customerName: order.customer.name,
@@ -40,6 +40,9 @@ const toOrderRow = (order: Order): OrderRowView => ({
   requiresTransfer: requiresTransfer(order.payment),
   isPaid: order.isPaid,
   paidAtLabel: order.paidAt ? formatDateCs(order.paidAt) : null,
+  isCancelled: order.isCancelled,
+  cancelledAtLabel: order.cancelledAt ? formatDateCs(order.cancelledAt) : null,
+  cancellationReason: order.cancellationReason,
   createdAtLabel: formatDateTimeCs(order.createdAt),
 })
 
@@ -61,6 +64,7 @@ export class AdvanceOrderStatus {
     return this.deps.uow.runInTransaction(async (repos) => {
       const order = await repos.orders.findById(orderId)
       if (!order) throw new NotFoundError('Objednávka')
+      if (order.isCancelled) throw new ConflictError('Zrušená objednávka se už neposouvá')
 
       const updated = await repos.orders.updateStatus(orderId, NEXT_ORDER_STATUS[order.status])
       return toOrderRow(updated)
@@ -80,6 +84,7 @@ export class SetOrderPaid {
     return this.deps.uow.runInTransaction(async (repos) => {
       const order = await repos.orders.findById(orderId)
       if (!order) throw new NotFoundError('Objednávka')
+      if (order.isCancelled) throw new ConflictError('Zrušená objednávka se už neoznačuje')
 
       // Idempotence: už zaplacenou objednávku neoznačujeme znovu. Jinak by dvojklik
       // nebo druhý otevřený tab přepsal datum, kdy peníze skutečně dorazily.

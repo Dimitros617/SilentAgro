@@ -35,6 +35,8 @@ const makeOrder = (payment: PaymentMethod, note = 'Přijedu v sobotu dopoledne')
     payment,
     status: OrderStatus.NEW,
     paidAt: null,
+    cancelledAt: null,
+    cancellationReason: null,
     userId: null,
     createdAt: new Date('2026-09-10T18:00:00Z'),
   })

@@ -120,7 +120,31 @@ export interface OrderRowView {
   requiresTransfer: boolean
   isPaid: boolean
   paidAtLabel: string | null
+  isCancelled: boolean
+  cancelledAtLabel: string | null
+  cancellationReason: string | null
   createdAtLabel: string
+}
+
+export interface UserRowView {
+  id: number
+  name: string
+  email: string
+  role: 'CUSTOMER' | 'FARMER'
+  isFarmer: boolean
+  isVerified: boolean
+  verifiedAtLabel: string | null
+  isActive: boolean
+  deactivatedAtLabel: string | null
+  registeredAtLabel: string
+  orderCount: number
+  cancelledCount: number
+  totalSpentLabel: string
+  lastOrderAtLabel: string | null
+}
+
+export interface UserDetailView extends UserRowView {
+  orders: OrderRowView[]
 }
 
 export interface AdminOverview {

@@ -1,4 +1,4 @@
-import type { Order } from '@/domain/entities'
+import type { Order, User } from '@/domain/entities'
 import type { PaymentInstruction, SentMailPreview } from '@/domain/ports/services'
 
 /**
@@ -10,6 +10,20 @@ import type { PaymentInstruction, SentMailPreview } from '@/domain/ports/service
  */
 export interface OrderNotifier {
   notifyOrderPlaced(order: Order): Promise<void>
+  /** Omluvný e-mail zákazníkovi s důvodem, proč byla rezervace zrušena. */
+  notifyOrderCancelled(order: Order, reason: string): Promise<void>
+}
+
+/**
+ * Zprávy směřované na účet, ne na objednávku.
+ *
+ * Na rozdíl od potvrzení objednávky se tyhle chyby **nepolykají**: když se farmáři
+ * neodešle zpráva zákazníkovi, musí se to dozvědět — na rozdíl od potvrzení, kde
+ * je pravdou sklad a e-mail jen notifikace.
+ */
+export interface UserNotifier {
+  sendVerification(user: User, verificationUrl: string): Promise<void>
+  sendMessage(user: User, subject: string, body: string): Promise<void>
 }
 
 /**

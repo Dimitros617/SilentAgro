@@ -76,6 +76,12 @@ export interface OrderRepository {
   countByStatus(status: OrderStatus): Promise<number>
   updateStatus(id: number, status: OrderStatus): Promise<Order>
   setPaid(id: number, paidAt: Date | null): Promise<Order>
+  cancel(id: number, cancelledAt: Date, reason: string): Promise<Order>
+  /**
+   * Objednávky zákazníka. Hledá podle účtu **i podle e-mailu**: tentýž člověk mohl
+   * nakoupit jako host dřív, než si účet založil, a farmáře zajímá celá jeho historie.
+   */
+  listForCustomer(userId: number, email: EmailAddress): Promise<Order[]>
   /** Množství rezervované v objednávkách, které ještě nebyly vydány. */
   reservedKg(): Promise<Kilograms>
   revenueSince(since: Date): Promise<Money>
@@ -103,12 +109,31 @@ export interface NewUserInput {
   readonly name: string
   readonly passwordHash: string
   readonly role: UserRole
+  readonly verificationToken: string | null
+  readonly verificationExpiresAt: Date | null
+}
+
+/** Souhrn objednávek jednoho zákazníka pro seznam v administraci. */
+export interface UserOrderStats {
+  readonly userId: number
+  readonly orderCount: number
+  readonly cancelledCount: number
+  readonly totalSpent: Money
+  readonly lastOrderAt: Date | null
 }
 
 export interface UserRepository {
   findByEmail(email: EmailAddress): Promise<User | null>
   findById(id: number): Promise<User | null>
+  findByVerificationToken(token: string): Promise<User | null>
   create(input: NewUserInput): Promise<User>
+  save(user: User): Promise<User>
+  listAll(): Promise<User[]>
+  /**
+   * Statistiky pro celý seznam najednou. Počítat je dotazem na uživatele by
+   * znamenalo N+1 dotazů u tabulky, kterou farmář otevírá denně.
+   */
+  orderStats(): Promise<UserOrderStats[]>
 }
 
 export interface FieldRepository {

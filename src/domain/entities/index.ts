@@ -120,6 +120,10 @@ export interface UserProps {
   readonly role: UserRole
   readonly passwordHash: string
   readonly createdAt: Date
+  readonly verifiedAt: Date | null
+  readonly verificationToken: string | null
+  readonly verificationExpiresAt: Date | null
+  readonly deactivatedAt: Date | null
 }
 
 export class User {
@@ -134,6 +138,40 @@ export class User {
   get name(): string { return this.props.name }
   get role(): UserRole { return this.props.role }
   get createdAt(): Date { return this.props.createdAt }
+  get verifiedAt(): Date | null { return this.props.verifiedAt }
+  get verificationToken(): string | null { return this.props.verificationToken }
+  get verificationExpiresAt(): Date | null { return this.props.verificationExpiresAt }
+  get deactivatedAt(): Date | null { return this.props.deactivatedAt }
+
+  get isVerified(): boolean { return this.props.verifiedAt !== null }
+
+  /** Deaktivovaný účet se nepřihlásí, ale jeho objednávky zůstávají čitelné. */
+  get isActive(): boolean { return this.props.deactivatedAt === null }
+
+  /** Platí ověřovací odkaz? Prošlý token se chová jako neexistující. */
+  canVerifyAt(now: Date): boolean {
+    if (this.props.verificationToken === null) return false
+    if (this.props.verificationExpiresAt === null) return false
+    return this.props.verificationExpiresAt.getTime() > now.getTime()
+  }
+
+  /** Ověření token zahazuje — odkaz ze staré zprávy nesmí platit napořád. */
+  withVerified(at: Date): User {
+    return new User({
+      ...this.props,
+      verifiedAt: at,
+      verificationToken: null,
+      verificationExpiresAt: null,
+    })
+  }
+
+  withVerificationToken(token: string, expiresAt: Date): User {
+    return new User({ ...this.props, verificationToken: token, verificationExpiresAt: expiresAt })
+  }
+
+  withActive(active: boolean, now: Date): User {
+    return new User({ ...this.props, deactivatedAt: active ? null : now })
+  }
 
   /**
    * Hash hesla je součástí entity, protože ho `LoginUser` potřebuje ověřit. Ven z aplikace

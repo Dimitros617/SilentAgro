@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
 import type { Field, HarvestEntry, NewsPost, Order, StorageReading, User, Variety } from '@/domain/entities'
 import { OrderStatus, PaymentMethod } from '@/domain/enums'
-import { NotFoundError } from '@/domain/errors'
+import { ConflictError, NotFoundError } from '@/domain/errors'
 import type {
   FieldRepository,
   HarvestRepository,
@@ -13,6 +13,7 @@ import type {
   OrderRepository,
   RepositoryBundle,
   StorageReadingRepository,
+  UserOrderStats,
   UserRepository,
   VarietyRepository,
 } from '@/domain/ports/repositories'
@@ -217,6 +218,35 @@ class PrismaOrderRepository implements OrderRepository {
     return toOrder(row)
   }
 
+  /**
+   * Zruší objednávku. `updateMany` s podmínkou `cancelledAt: null` je pojistka proti
+   * dvojímu zrušení: druhý pokus změní nula řádků, takže se sklad nevrátí dvakrát.
+   */
+  async cancel(id: number, cancelledAt: Date, reason: string): Promise<Order> {
+    const changed = await this.db.order.updateMany({
+      where: { id, cancelledAt: null },
+      data: { cancelledAt, cancellationReason: reason },
+    })
+
+    if (changed.count === 0) {
+      const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
+      if (!existing) throw new NotFoundError('Objednávka')
+      throw new ConflictError('Objednávka už je zrušená')
+    }
+
+    const row = await this.db.order.findUniqueOrThrow({ where: { id }, include: orderInclude })
+    return toOrder(row)
+  }
+
+  async listForCustomer(userId: number, email: EmailAddress): Promise<Order[]> {
+    const rows = await this.db.order.findMany({
+      where: { OR: [{ userId }, { customerEmail: email.value }] },
+      orderBy: { id: 'desc' },
+      include: orderInclude,
+    })
+    return rows.map(toOrder)
+  }
+
   async setPaid(id: number, paidAt: Date | null): Promise<Order> {
     const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
     if (!existing) throw new NotFoundError('Objednávka')
@@ -299,6 +329,11 @@ class PrismaUserRepository implements UserRepository {
     return row ? toUser(row) : null
   }
 
+  async findByVerificationToken(token: string): Promise<User | null> {
+    const row = await this.db.user.findUnique({ where: { verificationToken: token } })
+    return row ? toUser(row) : null
+  }
+
   async create(input: NewUserInput): Promise<User> {
     const row = await this.db.user.create({
       data: {
@@ -306,9 +341,66 @@ class PrismaUserRepository implements UserRepository {
         name: input.name,
         passwordHash: input.passwordHash,
         role: input.role,
+        verificationToken: input.verificationToken,
+        verificationExpiresAt: input.verificationExpiresAt,
       },
     })
     return toUser(row)
+  }
+
+  async save(user: User): Promise<User> {
+    const row = await this.db.user.update({
+      where: { id: user.id },
+      data: {
+        name: user.name,
+        verifiedAt: user.verifiedAt,
+        verificationToken: user.verificationToken,
+        verificationExpiresAt: user.verificationExpiresAt,
+        deactivatedAt: user.deactivatedAt,
+      },
+    })
+    return toUser(row)
+  }
+
+  async listAll(): Promise<User[]> {
+    const rows = await this.db.user.findMany({ orderBy: { id: 'desc' } })
+    return rows.map(toUser)
+  }
+
+  /**
+   * Statistiky všech zákazníků jedním dotazem.
+   *
+   * Objednávky se párují přes `user_id` i přes e-mail: tentýž člověk mohl nakoupit
+   * jako host dřív, než si účet založil. Zrušené se do útraty nepočítají, ale
+   * vypisují se zvlášť — farmáře zajímá, kdo často ruší.
+   */
+  async orderStats(): Promise<UserOrderStats[]> {
+    const rows = await this.db.$queryRaw<
+      Array<{
+        user_id: number
+        order_count: bigint | number
+        cancelled_count: bigint | number
+        total_spent: unknown
+        last_order_at: Date | null
+      }>
+    >`
+      SELECT u.id AS user_id,
+             COUNT(o.id) AS order_count,
+             COALESCE(SUM(o.cancelled_at IS NOT NULL), 0) AS cancelled_count,
+             COALESCE(SUM(CASE WHEN o.cancelled_at IS NULL THEN o.total_czk ELSE 0 END), 0) AS total_spent,
+             MAX(o.created_at) AS last_order_at
+      FROM users u
+      LEFT JOIN orders o ON o.user_id = u.id OR o.customer_email = u.email
+      GROUP BY u.id
+    `
+
+    return rows.map((row) => ({
+      userId: Number(row.user_id),
+      orderCount: Number(row.order_count),
+      cancelledCount: Number(row.cancelled_count),
+      totalSpent: Money.fromCzk(decimalToNumber(row.total_spent)),
+      lastOrderAt: row.last_order_at,
+    }))
   }
 }
 

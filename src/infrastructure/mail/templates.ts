@@ -143,3 +143,102 @@ export function renderFarmerNotification(input: FarmerNotificationInput): MailMe
     text,
   }
 }
+
+export interface OrderCancelledInput {
+  readonly order: Order
+  readonly reason: string
+}
+
+export function renderOrderCancelled(input: OrderCancelledInput): MailMessage {
+  const { order, reason } = input
+
+  const text = [
+    `Dobrý den, ${order.customer.name},`,
+    '',
+    `moc se omlouváme, ale vaši rezervaci ${order.code} musíme zrušit.`,
+    '',
+    `Objednávka: ${order.itemsLabel}`,
+    `Celkem: ${formatCzkPerKg(order.total)}`,
+    '',
+    'Důvod:',
+    reason,
+    '',
+    requiresTransfer(order.payment)
+      ? 'Pokud jste už zaplatili, ozvěte se nám a peníze obratem vrátíme.'
+      : 'Nic jste neplatili, takže se nic nevrací.',
+    '',
+    'Brambory jsme vrátili zpět do nabídky — mrkněte na burzu, jestli si nevyberete jinou odrůdu.',
+    '',
+    'SilentAgro by Silent Industries · +420 777 123 456',
+  ]
+    .filter((line) => line !== '')
+    .join('\n')
+
+  const html = `
+    <div style="font-family:system-ui,sans-serif;color:#14201a;max-width:560px">
+      <p style="font-size:15px;line-height:1.6">Dobrý den, ${escapeHtml(order.customer.name)},</p>
+      <p style="font-size:15px;line-height:1.6">
+        moc se omlouváme, ale vaši rezervaci <strong>${escapeHtml(order.code)}</strong> musíme zrušit.
+      </p>
+      <p style="font-size:14px;line-height:1.6;color:#4a5750">
+        ${escapeHtml(order.itemsLabel)} · ${escapeHtml(formatCzkPerKg(order.total))}
+      </p>
+      <p style="font-size:15px;line-height:1.6"><strong>Důvod:</strong><br />${escapeHtml(reason)}</p>
+      <p style="font-size:14px;line-height:1.6;color:#4a5750">
+        ${requiresTransfer(order.payment)
+          ? 'Pokud jste už zaplatili, ozvěte se nám a peníze obratem vrátíme.'
+          : 'Nic jste neplatili, takže se nic nevrací.'}
+      </p>
+      <p style="font-size:13px;color:#6f7a72">SilentAgro by Silent Industries · +420 777 123 456</p>
+    </div>
+  `
+
+  return {
+    to: order.customer.email.value,
+    subject: `Rezervace ${order.code} byla zrušena — SilentAgro`,
+    text,
+    html,
+  }
+}
+
+export function renderVerification(name: string, to: string, verificationUrl: string): MailMessage {
+  const text = [
+    `Dobrý den, ${name},`,
+    '',
+    'potvrďte prosím svůj e-mail otevřením odkazu:',
+    verificationUrl,
+    '',
+    'Odkaz platí 48 hodin. Pokud jste si účet u nás nezakládali, zprávu ignorujte.',
+    '',
+    'SilentAgro by Silent Industries',
+  ].join('\n')
+
+  return {
+    to,
+    subject: 'Potvrďte svůj e-mail — SilentAgro',
+    text,
+    html: `
+      <div style="font-family:system-ui,sans-serif;color:#14201a;max-width:560px">
+        <p style="font-size:15px;line-height:1.6">Dobrý den, ${escapeHtml(name)},</p>
+        <p style="font-size:15px;line-height:1.6">potvrďte prosím svůj e-mail:</p>
+        <p><a href="${escapeHtml(verificationUrl)}" style="display:inline-block;padding:12px 20px;background:#1f6f4a;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">Potvrdit e-mail</a></p>
+        <p style="font-size:13px;color:#6f7a72">Odkaz platí 48 hodin. Pokud jste si účet nezakládali, zprávu ignorujte.</p>
+      </div>
+    `,
+  }
+}
+
+export function renderFarmerMessage(name: string, to: string, subject: string, body: string): MailMessage {
+  return {
+    to,
+    subject,
+    text: [`Dobrý den, ${name},`, '', body, '', 'SilentAgro by Silent Industries · +420 777 123 456'].join('\n'),
+    html: `
+      <div style="font-family:system-ui,sans-serif;color:#14201a;max-width:560px">
+        <p style="font-size:15px;line-height:1.6">Dobrý den, ${escapeHtml(name)},</p>
+        <p style="font-size:15px;line-height:1.6;white-space:pre-line">${escapeHtml(body)}</p>
+        <p style="font-size:13px;color:#6f7a72">SilentAgro by Silent Industries · +420 777 123 456</p>
+      </div>
+    `,
+  }
+}

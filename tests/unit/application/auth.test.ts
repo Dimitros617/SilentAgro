@@ -3,11 +3,19 @@ import { LoginUser, RegisterUser } from '@/application/use-cases/auth'
 import { UserRole } from '@/domain/enums'
 import { AuthError, ConflictError, ValidationError } from '@/domain/errors'
 import { EmailAddress } from '@/domain/value-objects/email-address'
-import { FakePasswordHasher, makeBundle } from './fakes'
+import {
+  FakePasswordHasher,
+  FakeUserNotifier,
+  RecordingLogger,
+  SequentialTokenGenerator,
+  fixedClock,
+  makeBundle,
+} from './fakes'
 
 const setup = async (existing: { email: string; password: string; role?: UserRole }[] = []) => {
   const bundle = makeBundle()
   const hasher = new FakePasswordHasher()
+  const notifier = new FakeUserNotifier()
 
   for (const entry of existing) {
     await bundle.users.create({
@@ -15,13 +23,24 @@ const setup = async (existing: { email: string; password: string; role?: UserRol
       name: 'Existující',
       passwordHash: await hasher.hash(entry.password),
       role: entry.role ?? UserRole.CUSTOMER,
+      verificationToken: null,
+      verificationExpiresAt: null,
     })
   }
 
   return {
     ...bundle,
     hasher,
-    register: new RegisterUser({ uow: bundle.uow, hasher }),
+    notifier,
+    register: new RegisterUser({
+      uow: bundle.uow,
+      hasher,
+      clock: fixedClock(),
+      tokenGenerator: new SequentialTokenGenerator(),
+      notifier,
+      logger: new RecordingLogger(),
+      config: { publicBaseUrl: 'https://silentagro.cz' },
+    }),
     login: new LoginUser({ uow: bundle.uow, hasher }),
   }
 }

@@ -62,6 +62,8 @@ export interface OrderProps {
   readonly payment: PaymentMethod
   readonly status: OrderStatus
   readonly paidAt: Date | null
+  readonly cancelledAt: Date | null
+  readonly cancellationReason: string | null
   readonly userId: number | null
   readonly createdAt: Date
 }
@@ -122,6 +124,22 @@ export class Order {
     return this.props.paidAt
   }
 
+  get cancelledAt(): Date | null {
+    return this.props.cancelledAt
+  }
+
+  get cancellationReason(): string | null {
+    return this.props.cancellationReason
+  }
+
+  /**
+   * Zrušení je nezávislé na `status`: informace, v jakém stavu objednávka byla,
+   * se tím nemá ztratit. Zároveň je to pojistka proti dvojímu vrácení skladu.
+   */
+  get isCancelled(): boolean {
+    return this.props.cancelledAt !== null
+  }
+
   get userId(): number | null {
     return this.props.userId
   }
@@ -168,5 +186,9 @@ export class Order {
 
   withPaidAt(paidAt: Date | null): Order {
     return new Order({ ...this.props, paidAt })
+  }
+
+  withCancellation(cancelledAt: Date, reason: string): Order {
+    return new Order({ ...this.props, cancelledAt, cancellationReason: reason })
   }
 }

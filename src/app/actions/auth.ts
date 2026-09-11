@@ -55,6 +55,11 @@ export async function registerAction(
     const result = await new RegisterUser({
       uow: container.uow,
       hasher: container.hasher,
+      clock: container.clock,
+      tokenGenerator: container.tokenGenerator,
+      notifier: container.userNotifier,
+      logger: container.logger,
+      config: { publicBaseUrl: container.config.publicBaseUrl },
     }).execute({
       name: String(formData.get('name') ?? ''),
       email,

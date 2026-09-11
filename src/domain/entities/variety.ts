@@ -93,6 +93,17 @@ export class Variety {
     return Math.max(0, Math.min(100, Math.round((this.props.stock.value / capacity) * 100)))
   }
 
+  /**
+   * Vrátí množství zpět do skladu (zrušená objednávka).
+   *
+   * Kapacita se schválně nehlídá: farmář mohl mezitím kapacitu snížit a odmítnout
+   * vrácení by znamenalo, že brambory zmizí z evidence úplně. `fillPercent`
+   * si přetečení ořízne na sto procent.
+   */
+  restock(quantity: Kilograms): Variety {
+    return new Variety({ ...this.props, stock: this.props.stock.plus(quantity) })
+  }
+
   withdraw(quantity: Kilograms): Variety {
     if (!this.hasStockFor(quantity)) {
       throw new InsufficientStockError(this.props.name, this.props.stock.value, quantity.value)

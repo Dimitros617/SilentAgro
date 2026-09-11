@@ -1,6 +1,6 @@
 import { Field, HarvestEntry, NewsPost, Order, StorageReading, User, Variety } from '@/domain/entities'
 import { OrderStatus, PaymentMethod, UserRole } from '@/domain/enums'
-import { NotFoundError } from '@/domain/errors'
+import { ConflictError, NotFoundError } from '@/domain/errors'
 import type {
   FieldRepository,
   HarvestRepository,
@@ -12,6 +12,7 @@ import type {
   OrderRepository,
   RepositoryBundle,
   StorageReadingRepository,
+  UserOrderStats,
   UserRepository,
   VarietyRepository,
 } from '@/domain/ports/repositories'
@@ -119,6 +120,8 @@ export class InMemoryOrderRepository implements OrderRepository {
       payment: input.payment,
       status: OrderStatus.NEW,
       paidAt: null,
+      cancelledAt: null,
+      cancellationReason: null,
       userId: input.userId,
       createdAt: input.createdAt,
     })
@@ -156,6 +159,21 @@ export class InMemoryOrderRepository implements OrderRepository {
     const next = order.withPaidAt(paidAt)
     this.items.set(id, next)
     return next
+  }
+
+  async cancel(id: number, cancelledAt: Date, reason: string): Promise<Order> {
+    const order = this.items.get(id)
+    if (!order) throw new NotFoundError('Objednávka')
+    if (order.isCancelled) throw new ConflictError('Objednávka už je zrušená')
+    const next = order.withCancellation(cancelledAt, reason)
+    this.items.set(id, next)
+    return next
+  }
+
+  async listForCustomer(userId: number, email: EmailAddress): Promise<Order[]> {
+    return [...this.items.values()]
+      .filter((o) => o.userId === userId || o.customer.email.value === email.value)
+      .sort((a, b) => b.id - a.id)
   }
 
   async reservedKg(): Promise<Kilograms> {
@@ -230,9 +248,37 @@ export class InMemoryUserRepository implements UserRepository {
       role: input.role,
       passwordHash: input.passwordHash,
       createdAt: new Date('2026-09-10T12:00:00Z'),
+      verifiedAt: null,
+      verificationToken: input.verificationToken ?? null,
+      verificationExpiresAt: input.verificationExpiresAt ?? null,
+      deactivatedAt: null,
     })
     this.items.push(user)
     return user
+  }
+
+  async findByVerificationToken(token: string): Promise<User | null> {
+    return this.items.find((u) => u.verificationToken === token) ?? null
+  }
+
+  async save(user: User): Promise<User> {
+    const index = this.items.findIndex((u) => u.id === user.id)
+    if (index >= 0) this.items[index] = user
+    return user
+  }
+
+  async listAll(): Promise<User[]> {
+    return [...this.items].sort((a, b) => b.id - a.id)
+  }
+
+  async orderStats(): Promise<UserOrderStats[]> {
+    return this.items.map((user) => ({
+      userId: user.id,
+      orderCount: 0,
+      cancelledCount: 0,
+      totalSpent: Money.zero(),
+      lastOrderAt: null,
+    }))
   }
 
   last(): User | undefined {
@@ -355,6 +401,22 @@ export function makeBundle(options: FakeBundleOptions = {}) {
 
 export const FARMER_ROLE = UserRole.FARMER
 
+
+export class FakeUserNotifier {
+  readonly verifications: Array<{ email: string; url: string }> = []
+  readonly messages: Array<{ email: string; subject: string; body: string }> = []
+  shouldFail = false
+
+  async sendVerification(user: User, verificationUrl: string): Promise<void> {
+    if (this.shouldFail) throw new Error('SMTP nedostupné')
+    this.verifications.push({ email: user.email.value, url: verificationUrl })
+  }
+
+  async sendMessage(user: User, subject: string, body: string): Promise<void> {
+    if (this.shouldFail) throw new Error('SMTP nedostupné')
+    this.messages.push({ email: user.email.value, subject, body })
+  }
+}
 
 export const TEST_BANK = {
   iban: Iban.of('CZ6508000000192000145399'),

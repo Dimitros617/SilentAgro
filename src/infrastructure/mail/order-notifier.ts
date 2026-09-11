@@ -1,7 +1,13 @@
-import type { Order } from '@/domain/entities'
-import type { OrderNotifier, OrderPresenter } from '@/domain/ports/order-presentation'
+import type { Order, User } from '@/domain/entities'
+import type { OrderNotifier, OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
 import type { Logger, Mailer, PaymentInstruction, SentMailPreview } from '@/domain/ports/services'
-import { renderCustomerConfirmation, renderFarmerNotification } from '@/infrastructure/mail/templates'
+import {
+  renderCustomerConfirmation,
+  renderFarmerMessage,
+  renderFarmerNotification,
+  renderOrderCancelled,
+  renderVerification,
+} from '@/infrastructure/mail/templates'
 import { tryRenderQrDataUrl, tryRenderQrPng } from '@/infrastructure/payment/qr-code'
 import { type BankAccount, buildPaymentDetails } from '@/infrastructure/payment/spayd'
 
@@ -15,7 +21,7 @@ export interface OrderMailConfig {
  * pro stránku potvrzení. Náhled se **nepíše zvlášť** — kdyby se text na stránce
  * formuloval podruhé, časem by se s odeslaným e-mailem rozešel.
  */
-export class MailOrderNotifier implements OrderNotifier, OrderPresenter {
+export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNotifier {
   constructor(
     private readonly deps: {
       mailer: Mailer
@@ -61,6 +67,27 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter {
         this.trySend(message.to, () => this.deps.mailer.send(message), order.code),
       ),
     )
+  }
+
+  async notifyOrderCancelled(order: Order, reason: string): Promise<void> {
+    const message = renderOrderCancelled({ order, reason })
+    await this.trySend(message.to, () => this.deps.mailer.send(message), order.code)
+  }
+
+  /**
+   * Ověřovací zpráva a zpráva od farmáře výjimku **nepolykají**.
+   *
+   * U potvrzení objednávky je pravdou sklad a e-mail je notifikace navíc. Tady je
+   * ale zpráva celý účel akce — když se neodešle, farmář to musí vědět.
+   */
+  async sendVerification(user: User, verificationUrl: string): Promise<void> {
+    await this.deps.mailer.send(
+      renderVerification(user.name, user.email.value, verificationUrl),
+    )
+  }
+
+  async sendMessage(user: User, subject: string, body: string): Promise<void> {
+    await this.deps.mailer.send(renderFarmerMessage(user.name, user.email.value, subject, body))
   }
 
   async paymentInstructionFor(order: Order): Promise<PaymentInstruction | null> {

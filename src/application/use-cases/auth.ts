@@ -2,9 +2,11 @@ import type { AuthResult } from '@/application/dto'
 import type { User } from '@/domain/entities'
 import { UserRole } from '@/domain/enums'
 import { AuthError, ConflictError, ValidationError } from '@/domain/errors'
-import type { PasswordHasher } from '@/domain/ports/services'
+import type { UserNotifier } from '@/domain/ports/order-presentation'
+import type { Clock, Logger, PasswordHasher, TokenGenerator } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { EmailAddress } from '@/domain/value-objects/email-address'
+import { verificationExpiry } from '@/application/use-cases/users'
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -30,8 +32,18 @@ export interface RegisterUserInput {
   readonly password: string
 }
 
+export interface RegisterUserDeps {
+  readonly uow: UnitOfWork
+  readonly hasher: PasswordHasher
+  readonly clock: Clock
+  readonly tokenGenerator: TokenGenerator
+  readonly notifier: UserNotifier
+  readonly logger: Logger
+  readonly config: { publicBaseUrl: string }
+}
+
 export class RegisterUser {
-  constructor(private readonly deps: { uow: UnitOfWork; hasher: PasswordHasher }) {}
+  constructor(private readonly deps: RegisterUserDeps) {}
 
   /**
    * Role ve vstupu záměrně není. Registrace vytváří výhradně zákazníka; farmáře
@@ -47,19 +59,38 @@ export class RegisterUser {
 
     const email = EmailAddress.of(input.email)
 
-    return this.deps.uow.runInTransaction(async (repos) => {
+    const now = this.deps.clock.now()
+    const verificationToken = this.deps.tokenGenerator.publicToken()
+
+    const user = await this.deps.uow.runInTransaction(async (repos) => {
       const existing = await repos.users.findByEmail(email)
       if (existing) throw new ConflictError('Tento e-mail už je zaregistrovaný')
 
-      const user = await repos.users.create({
+      return repos.users.create({
         email,
         name,
         passwordHash: await this.deps.hasher.hash(input.password),
         role: UserRole.CUSTOMER,
+        verificationToken,
+        verificationExpiresAt: verificationExpiry(now),
       })
-
-      return toAuthResult(user)
     })
+
+    // Registrace platí i bez odeslaného ověření. Nedostupný SMTP nesmí zákazníkovi
+    // zabránit v založení účtu — farmář ho může ověřit ručně a odkaz poslat znovu.
+    try {
+      await this.deps.notifier.sendVerification(
+        user,
+        `${this.deps.config.publicBaseUrl}/overeni/${verificationToken}`,
+      )
+    } catch (error) {
+      this.deps.logger.error('Odeslání ověřovacího e-mailu selhalo, účet zůstává založený', {
+        email: email.value,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+
+    return toAuthResult(user)
   }
 }
 
@@ -91,6 +122,12 @@ export class LoginUser {
       : await this.deps.hasher.verify(input.password, DUMMY_HASH)
 
     if (!user || !matches) throw new AuthError(INVALID_CREDENTIALS)
+
+    // Deaktivovaný účet se nepřihlásí. Hláška je jiná než u špatného hesla schválně:
+    // člověk, kterému farmář účet zamkl, se to má dozvědět, ne tápat nad heslem.
+    if (!user.isActive) {
+      throw new AuthError('Účet byl deaktivován. Ozvěte se prosím na farma@silentagro.cz.')
+    }
 
     return toAuthResult(user)
   }

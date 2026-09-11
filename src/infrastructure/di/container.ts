@@ -1,6 +1,6 @@
 import 'server-only'
 import { randomBytes } from 'node:crypto'
-import type { OrderNotifier, OrderPresenter } from '@/domain/ports/order-presentation'
+import type { OrderNotifier, OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
 import type { Clock, Logger, Mailer, PasswordHasher, TokenGenerator, TokenService } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { Iban } from '@/domain/value-objects/iban'
@@ -19,6 +19,7 @@ export interface Container {
   readonly mailer: Mailer
   readonly notifier: OrderNotifier
   readonly presenter: OrderPresenter
+  readonly userNotifier: UserNotifier
   readonly hasher: PasswordHasher
   readonly tokens: TokenService
   readonly clock: Clock
@@ -83,6 +84,7 @@ function build(): Container {
     mailer,
     notifier,
     presenter: notifier,
+    userNotifier: notifier,
     hasher: new BcryptPasswordHasher(),
     tokens: new JoseTokenService(env.AUTH_SECRET),
     clock: systemClock,

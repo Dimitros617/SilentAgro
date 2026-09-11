@@ -123,6 +123,8 @@ export const toOrder = (row: OrderRow & { items: OrderItemRow[] }): Order =>
     payment: row.paymentMethod as PaymentMethod,
     status: row.status as OrderStatus,
     paidAt: row.paidAt,
+    cancelledAt: row.cancelledAt,
+    cancellationReason: row.cancellationReason,
     userId: row.userId,
     createdAt: row.createdAt,
   })
@@ -174,4 +176,8 @@ export const toUser = (row: UserRow): User =>
     role: row.role as UserRole,
     passwordHash: row.passwordHash,
     createdAt: row.createdAt,
+    verifiedAt: row.verifiedAt,
+    verificationToken: row.verificationToken,
+    verificationExpiresAt: row.verificationExpiresAt,
+    deactivatedAt: row.deactivatedAt,
   })
