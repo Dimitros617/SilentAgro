@@ -1,48 +1,37 @@
-"use client";
+'use client'
 
-import { useEffect, useRef, useState } from "react";
-import { useCart } from "@/components/cart/cart-provider";
+import { useEffect, useRef, useState } from 'react'
+import { useCart } from '@/components/cart/cart-provider'
 import {
+  BEAM_PIVOT_Y,
   MAX_POTATOES,
+  panShift,
   potatoCount,
   potatoPlacement,
   tiltSequence,
   visiblePotatoes,
   weightCount,
-} from "./scale-model";
+} from './scale-model'
 
 /**
  * Obrys pytle. Používá se třikrát — jako plátno, jako ořez pro brambory a nakonec
  * jako obrys nakreslený přes ně, aby silueta zůstala čitelná i u plného pytle.
  */
-const SACK =
-  "M -31 37 C -36 12, -31 -12, -19 -22 L 19 -22 C 31 -12, 36 12, 31 37 Z";
+const SACK = 'M -31 37 C -36 12, -31 -12, -19 -22 L 19 -22 C 31 -12, 36 12, 31 37 Z'
 
-/** Svislý posun misky pro daný náklon ramene; rameno má poloviční délku 80. */
-const panOffset = (tiltDegrees: number) =>
-  80 * Math.sin((tiltDegrees * Math.PI) / 180);
-
-const formatKg = (value: number) => String(value).replace(".", ",");
+const formatKg = (value: number) => String(value).replace('.', ',')
 
 /** Krok dokmitu ramene i rozestup mezi sypajícími se bramborami. */
-const TILT_STEP_MS = 320;
-const DROP_STAGGER_MS = 60;
-const LEAVE_MS = 520;
+const TILT_STEP_MS = 320
+const DROP_STAGGER_MS = 60
+const LEAVE_MS = 520
 
-function Potato({
-  index,
-  delayMs,
-  leaving,
-}: {
-  index: number;
-  delayMs: number;
-  leaving: boolean;
-}) {
-  const { x, y, rotate, scale } = potatoPlacement(index);
+function Potato({ index, delayMs, leaving }: { index: number; delayMs: number; leaving: boolean }) {
+  const { x, y, rotate, scale } = potatoPlacement(index)
 
   return (
     <g
-      className={`scale__potato${leaving ? " scale__potato--leaving" : ""}`}
+      className={`scale__potato${leaving ? ' scale__potato--leaving' : ''}`}
       style={{
         transform: `translate(${x}px, ${y}px) rotate(${rotate}deg) scale(${scale})`,
         animationDelay: leaving ? undefined : `${delayMs}ms`,
@@ -53,53 +42,53 @@ function Potato({
       <circle cx="2.4" cy="1.4" r="0.7" fill="#8d5f2c" />
       <circle cx="-2.8" cy="2" r="0.6" fill="#8d5f2c" />
     </g>
-  );
+  )
 }
 
 export function Scale() {
-  const { totalKg } = useCart();
+  const { totalKg } = useCart()
 
-  const target = visiblePotatoes(totalKg);
-  const total = potatoCount(totalKg);
+  const target = visiblePotatoes(totalKg)
+  const total = potatoCount(totalKg)
 
   // Brambory, které právě mizí, musí zůstat vykreslené, dokud dopadá animace.
-  const [shown, setShown] = useState(target);
-  const [enteredFrom, setEnteredFrom] = useState(0);
-  const [leavingFrom, setLeavingFrom] = useState<number | null>(null);
-  const [tilt, setTilt] = useState(0);
-  const previousKg = useRef(totalKg);
+  const [shown, setShown] = useState(target)
+  const [enteredFrom, setEnteredFrom] = useState(0)
+  const [leavingFrom, setLeavingFrom] = useState<number | null>(null)
+  const [tilt, setTilt] = useState(0)
+  const previousKg = useRef(totalKg)
 
   useEffect(() => {
-    const delta = totalKg - previousKg.current;
-    previousKg.current = totalKg;
-    if (delta === 0) return;
+    const delta = totalKg - previousKg.current
+    previousKg.current = totalKg
+    if (delta === 0) return
 
     const timers = tiltSequence(delta).map((angle, step) =>
       window.setTimeout(() => setTilt(angle), step * TILT_STEP_MS),
-    );
+    )
     return () => {
-      for (const timer of timers) window.clearTimeout(timer);
-    };
-  }, [totalKg]);
+      for (const timer of timers) window.clearTimeout(timer)
+    }
+  }, [totalKg])
 
   useEffect(() => {
     if (target >= shown) {
-      setEnteredFrom(shown);
-      setShown(target);
-      setLeavingFrom(null);
-      return;
+      setEnteredFrom(shown)
+      setShown(target)
+      setLeavingFrom(null)
+      return
     }
 
-    setLeavingFrom(target);
+    setLeavingFrom(target)
     const timer = window.setTimeout(() => {
-      setShown(target);
-      setLeavingFrom(null);
-    }, LEAVE_MS);
-    return () => window.clearTimeout(timer);
-  }, [target, shown]);
+      setShown(target)
+      setLeavingFrom(null)
+    }, LEAVE_MS)
+    return () => window.clearTimeout(timer)
+  }, [target, shown])
 
-  const offset = panOffset(tilt);
-  const weights = weightCount(totalKg);
+  const shift = panShift(tilt)
+  const weights = weightCount(totalKg)
 
   return (
     <aside className="scale-panel" aria-labelledby="scale-title">
@@ -107,12 +96,7 @@ export function Scale() {
         Vaše váha
       </h2>
 
-      <svg
-        className="scale"
-        viewBox="0 0 250 224"
-        role="img"
-        aria-hidden="true"
-      >
+      <svg className="scale" viewBox="0 0 250 224" role="img" aria-hidden="true">
         <defs>
           <clipPath id="scale-sack-clip">
             <path d={SACK} />
@@ -124,22 +108,12 @@ export function Scale() {
         <rect x="121" y="58" width="8" height="142" rx="3" fill="#9c7a50" />
         <circle cx="125" cy="57" r="5" fill="var(--gold, #c79a3b)" />
 
-        {/* Rameno. Otáčí se kolem čepu, misky se posouvají svisle o stejný kus. */}
+        {/* Rameno se otáčí kolem čepu, misky jedou svisle s jeho konci. */}
         <g
           className="scale__beam"
-          style={{
-            transform: `rotate(${tilt}deg)`,
-            transformOrigin: "125px 60px",
-          }}
+          style={{ transform: `rotate(${tilt}deg)`, transformOrigin: '125px 60px' }}
         >
-          <rect
-            x="45"
-            y="57"
-            width="160"
-            height="6"
-            rx="3"
-            fill="var(--gold, #c79a3b)"
-          />
+          <rect x="45" y="57" width="160" height="6" rx="3" fill="var(--gold, #c79a3b)" />
           <circle cx="45" cy="60" r="3.4" fill="#8a6a44" />
           <circle cx="205" cy="60" r="3.4" fill="#8a6a44" />
         </g>
@@ -148,14 +122,9 @@ export function Scale() {
             skládá nahoru a s krátkými závěsy by přerostl vahadlo. */}
         <g
           className="scale__pan"
-          style={{ transform: `translate(45px, ${60 + offset}px)` }}
+          style={{ transform: `translate(45px, ${BEAM_PIVOT_Y + shift.left}px)` }}
         >
-          <path
-            d="M 0 0 L -34 84 M 0 0 L 34 84"
-            stroke="#8a6a44"
-            strokeWidth="1.4"
-            fill="none"
-          />
+          <path d="M 0 0 L -34 84 M 0 0 L 34 84" stroke="#8a6a44" strokeWidth="1.4" fill="none" />
           <ellipse cy="84" rx="38" ry="6" fill="var(--gold, #c79a3b)" />
           {Array.from({ length: weights }, (_, index) => (
             <path
@@ -172,14 +141,9 @@ export function Scale() {
         {/* Pravá miska: pytel */}
         <g
           className="scale__pan"
-          style={{ transform: `translate(205px, ${60 - offset}px)` }}
+          style={{ transform: `translate(205px, ${BEAM_PIVOT_Y + shift.right}px)` }}
         >
-          <path
-            d="M 0 0 L -34 84 M 0 0 L 34 84"
-            stroke="#8a6a44"
-            strokeWidth="1.4"
-            fill="none"
-          />
+          <path d="M 0 0 L -34 84 M 0 0 L 34 84" stroke="#8a6a44" strokeWidth="1.4" fill="none" />
           <ellipse cy="84" rx="38" ry="6" fill="var(--gold, #c79a3b)" />
           {/* Pytel stojí na misce, ne na čepu — proto posun. Ořez je uvnitř
               stejného posunu, takže brambory sedí s obrysem. */}
@@ -197,7 +161,7 @@ export function Scale() {
             </g>
             <path d={SACK} fill="none" stroke="#b39c66" strokeWidth="1.6" />
             {/* Hrdlo se kreslí až nad bramborami, jinak by ho plný pytel překryl
-              a silueta by se změnila v hromadu. */}
+                a silueta by se změnila v hromadu. */}
             <path
               d="M -19 -22 L -14 -35 L 14 -35 L 19 -22 Z"
               fill="#d3c096"
@@ -217,10 +181,7 @@ export function Scale() {
             <strong>{formatKg(totalKg)} kg</strong>
             <span className="muted"> v košíku</span>
             {total > MAX_POTATOES ? (
-              <span
-                className="muted"
-                style={{ display: "block", fontSize: 12 }}
-              >
+              <span className="muted" style={{ display: 'block', fontSize: 12 }}>
                 pytel ukazuje prvních {MAX_POTATOES} brambor
               </span>
             ) : null}
@@ -228,5 +189,5 @@ export function Scale() {
         )}
       </p>
     </aside>
-  );
+  )
 }

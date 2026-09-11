@@ -82,6 +82,37 @@ test('rameno se po zhoupnutí vrátí do roviny', async ({ page }) => {
   await expect(beam).toHaveAttribute('style', /rotate\(0deg\)/, { timeout: 3000 })
 })
 
+test('miska s pytlem klesá na tu stranu, na kterou se nakloní rameno', async ({ page }) => {
+  await page.goto('/burza')
+
+  const card = firstCard(page)
+  const name = (await card.getByRole('heading').innerText()).trim()
+  await addToCart(page, name, 2)
+
+  // Obálky misek se mezi sebou porovnat nedají — pytel je vyšší než sloupec
+  // závaží. Čte se proto posun každé misky a otočení ramene, a to najednou,
+  // než se rameno stihne dorovnat.
+  await page.waitForTimeout(80)
+  const state = await page.evaluate(() => {
+    const shiftOf = (index: number) => {
+      const element = document.querySelectorAll('.scale__pan')[index] as HTMLElement
+      return Number.parseFloat(/translate\([^,]+,\s*([-\d.]+)px\)/.exec(element.style.transform)?.[1] ?? '0')
+    }
+    const beam = document.querySelector('.scale__beam') as HTMLElement
+    return {
+      rotace: Number.parseFloat(/rotate\(([-\d.]+)deg\)/.exec(beam.style.transform)?.[1] ?? '0'),
+      zavazi: shiftOf(0),
+      pytel: shiftOf(1),
+    }
+  })
+
+  // Kladné otočení je v SVG po směru hodinových ručiček: pravý konec ramene
+  // klesá. Pytel na něm visí, takže musí klesat taky — tedy mít větší `y` než
+  // závaží. Obrácená znaménka rameno od misek odtrhnou.
+  expect(state.rotace).toBeGreaterThan(0)
+  expect(state.pytel).toBeGreaterThan(state.zavazi)
+})
+
 test('nejde vložit víc, než kolik je skladem', async ({ page }) => {
   await page.goto('/burza')
 

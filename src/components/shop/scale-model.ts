@@ -83,6 +83,23 @@ export function potatoPlacement(index: number): PotatoPlacement {
  */
 export const TILT_DEGREES = 9
 
+/** Poloviční délka ramene a výška čepu v jednotkách SVG. */
+export const BEAM_HALF = 80
+export const BEAM_PIVOT_Y = 60
+
+/**
+ * Svislý posun obou misek pro daný náklon ramene.
+ *
+ * V SVG roste `y` dolů, takže kladné otočení je po směru hodinových ručiček a
+ * pravý konec ramene **klesá**. Miska s pytlem na něm visí, takže musí klesat
+ * s ním. Původně měla každá miska znaménko naopak a rameno se naklánělo na
+ * jednu stranu, zatímco pytel stoupal na druhou — jako by mezi nimi nic nebylo.
+ */
+export function panShift(tiltDegrees: number): { left: number; right: number } {
+  const shift = BEAM_HALF * Math.sin((tiltDegrees * Math.PI) / 180)
+  return { left: -shift, right: shift }
+}
+
 export function tiltSequence(delta: number): number[] {
   if (delta === 0) return [0]
   const direction = delta > 0 ? 1 : -1

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BEAM_HALF,
   MAX_POTATOES,
   MAX_WEIGHTS,
   TILT_DEGREES,
+  panShift,
   potatoCount,
   potatoPlacement,
   tiltSequence,
@@ -90,5 +92,38 @@ describe('náklon ramene', () => {
 
   it('při ubrání se nakloní na opačnou stranu', () => {
     expect(tiltSequence(-2)[0]).toBe(-TILT_DEGREES)
+  })
+})
+
+describe('posun misek', () => {
+  it('v klidu stojí obě v rovině', () => {
+    const { left, right } = panShift(0)
+
+    expect(left).toBeCloseTo(0)
+    expect(right).toBeCloseTo(0)
+  })
+
+  it('při přidání klesá miska s pytlem a stoupá miska se závažími', () => {
+    // Kladné otočení je v SVG po směru hodinových ručiček, takže pravý konec
+    // ramene klesá a `y` roste. Opačná znaménka rozpojí rameno od misek.
+    const { left, right } = panShift(TILT_DEGREES)
+
+    expect(right).toBeGreaterThan(0)
+    expect(left).toBeLessThan(0)
+  })
+
+  it('posun odpovídá konci ramene, ne libovolnému číslu', () => {
+    // Miska visí na konci ramene; kdyby se posouvala jinak, závěsy by se
+    // od vahadla odtrhly.
+    const { right } = panShift(TILT_DEGREES)
+    expect(right).toBeCloseTo(BEAM_HALF * Math.sin((TILT_DEGREES * Math.PI) / 180))
+  })
+
+  it('je souměrný', () => {
+    const up = panShift(TILT_DEGREES)
+    const down = panShift(-TILT_DEGREES)
+
+    expect(up.left).toBeCloseTo(-down.left)
+    expect(up.right).toBeCloseTo(-down.right)
   })
 })
