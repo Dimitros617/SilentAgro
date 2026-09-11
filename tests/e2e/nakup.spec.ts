@@ -17,12 +17,14 @@ test('burza ukazuje odrůdy a vyprodanou označí', async ({ page }) => {
 })
 
 test('zákazník si rezervuje brambory a dostane potvrzení', async ({ page }) => {
+  const email = `potvrzeni-${Date.now()}@email.cz`
+
   await page.goto('/burza')
   await addToCart(page, 'Bernie', 2.5)
-  await checkout(page)
+  await checkout(page, { email })
 
   await expect(page.getByRole('heading', { name: /Rezervace #\d+ přijata/ })).toBeVisible()
-  await expect(page.getByText('jan@email.cz').first()).toBeVisible()
+  await expect(page.getByText(email).first()).toBeVisible()
 
   // Náhled obou odeslaných zpráv
   await expect(page.getByText('E-mail zákazníkovi')).toBeVisible()

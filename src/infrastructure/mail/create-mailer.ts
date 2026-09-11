@@ -36,6 +36,11 @@ export class NodemailerMailer implements Mailer {
       host: config.host,
       port: config.port,
       secure: config.secure,
+      // Bez těchto limitů čeká nedostupný SMTP server na výchozí timeout operačního
+      // systému — u rezervace to znamená zákazníka zírajícího na zablokované tlačítko.
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 10_000,
       // Prázdné `auth` shodí spojení na serverech, které přihlášení nevyžadují
       // (typicky Mailpit ve vývoji), proto se klíč přidává jen když je co poslat.
       ...(config.auth ? { auth: config.auth } : {}),

@@ -51,11 +51,16 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter {
       }),
     ]
 
-    // Každá zpráva zvlášť: když zákazníkova adresa odmítá poštu, farmář se
+    // Obě zprávy najednou, ne za sebou. Sekvenčně by nedostupný SMTP server stál
+    // dva timeouty a rezervace by tak dlouho nevrátila odpověď.
+    //
+    // Každá se ošetřuje zvlášť: když zákazníkova adresa odmítá poštu, farmář se
     // o objednávce musí dozvědět stejně.
-    for (const message of messages) {
-      await this.trySend(message.to, () => this.deps.mailer.send(message), order.code)
-    }
+    await Promise.all(
+      messages.map((message) =>
+        this.trySend(message.to, () => this.deps.mailer.send(message), order.code),
+      ),
+    )
   }
 
   async paymentInstructionFor(order: Order): Promise<PaymentInstruction | null> {

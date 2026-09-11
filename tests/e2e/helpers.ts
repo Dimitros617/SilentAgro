@@ -45,11 +45,25 @@ export interface CheckoutOptions {
   payment?: 'Hotově při převzetí' | 'Převodem na účet' | 'QR platba'
 }
 
+let customerCounter = 0
+
+/**
+ * Každý scénář nakupuje jako jiný zákazník.
+ *
+ * Aplikace omezuje počet rezervací na účet (deset za hodinu), takže sdílená adresa
+ * by po pár testech narazila na limit — a při opakovaném spuštění sady během jedné
+ * hodiny hned. Různí zákazníci jsou navíc bližší tomu, co se děje v provozu.
+ */
+function nextCustomerEmail(): string {
+  customerCounter += 1
+  return `zakaznik-${process.pid}-${customerCounter}@email.cz`
+}
+
 /** Projde košíkem až na stránku potvrzení. */
 export async function checkout(page: Page, options: CheckoutOptions = {}): Promise<void> {
   await page.goto('/kosik')
   await page.getByLabel('Jméno a příjmení').fill(options.name ?? 'Jan Novák')
-  await page.getByLabel(/E-mail/).fill(options.email ?? 'jan@email.cz')
+  await page.getByLabel(/E-mail/).fill(options.email ?? nextCustomerEmail())
   await page.getByRole('button', { name: options.payment ?? 'Hotově při převzetí' }).click()
   await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
   await expect(page).toHaveURL(/\/rezervace\//)
