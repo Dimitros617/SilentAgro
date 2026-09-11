@@ -21,20 +21,25 @@ import { toResultError } from './errors'
 
 const idSchema = z.number().int().positive()
 
+// Hlášky jsou české, protože se uživateli ukazují přímo — Zod by jinak poslal
+// do administrace anglickou technickou větu o délce řetězce.
 const varietySchema = z.object({
   id: z.number().int().positive().nullable(),
-  name: z.string().min(1).max(120),
-  tag: z.string().max(160).default(''),
-  description: z.string().max(4000).default(''),
-  colorHex: z.string().max(7),
-  priceCzk: z.number().min(0).max(100_000),
-  stockKg: z.number().min(0).max(1_000_000),
-  capacityKg: z.number().min(0).max(1_000_000),
+  name: z.string().min(1, 'Vyplňte název odrůdy').max(120, 'Název je příliš dlouhý'),
+  tag: z.string().max(160, 'Štítek je příliš dlouhý').default(''),
+  description: z.string().max(4000, 'Popis je příliš dlouhý').default(''),
+  colorHex: z.string().max(7, 'Barva musí být ve tvaru #rrggbb'),
+  priceCzk: z.number().min(0, 'Cena nesmí být záporná').max(100_000, 'Cena je nesmyslně vysoká'),
+  stockKg: z.number().min(0, 'Sklad nesmí být záporný').max(1_000_000, 'Sklad je nesmyslně velký'),
+  capacityKg: z
+    .number()
+    .min(0, 'Kapacita nesmí být záporná')
+    .max(1_000_000, 'Kapacita je nesmyslně velká'),
 })
 
 const newsSchema = z.object({
-  title: z.string().min(1).max(200),
-  body: z.string().max(8000).default(''),
+  title: z.string().min(1, 'Napište titulek novinky').max(200, 'Titulek je příliš dlouhý'),
+  body: z.string().max(8000, 'Text je příliš dlouhý').default(''),
   tag: z.enum([NewsTag.HARVEST, NewsTag.STORAGE, NewsTag.FIELD]),
   imageUrl: z.string().max(300).nullable().default(null),
 })

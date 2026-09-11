@@ -6,6 +6,11 @@ coverage
 playwright-report
 test-results
 tests
+# Konfigurace Playwrightu importuje z tests/, takže musí odejít s nimi — jinak
+# v build kontextu zbude soubor s importem, který nemá na co ukazovat.
+playwright.config.ts
+playwright-report
+vitest.config.ts
 docs
 public/uploads/*
 !public/uploads/.gitkeep

@@ -16,10 +16,10 @@ import { toResultError } from './errors'
  */
 const payloadSchema = z.object({
   customer: z.object({
-    name: z.string().min(1).max(120),
-    email: z.string().min(1).max(255),
-    phone: z.string().max(40).default(''),
-    note: z.string().max(2000).default(''),
+    name: z.string().min(1, 'Vyplňte jméno a příjmení').max(120, 'Jméno je příliš dlouhé'),
+    email: z.string().min(1, 'Vyplňte e-mail').max(255, 'E-mail je příliš dlouhý'),
+    phone: z.string().max(40, 'Telefon je příliš dlouhý').default(''),
+    note: z.string().max(2000, 'Poznámka je příliš dlouhá').default(''),
   }),
   delivery: z.enum([DeliveryMethod.PICKUP, DeliveryMethod.LOCAL_DELIVERY]),
   payment: z.enum([PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER, PaymentMethod.QR_CODE]),
@@ -27,7 +27,7 @@ const payloadSchema = z.object({
     .array(
       z.object({
         varietyId: z.number().int().positive(),
-        quantityKg: z.number().positive().max(1000),
+        quantityKg: z.number().positive('Množství musí být kladné').max(1000, 'Tolik brambor neprodáváme'),
       }),
     )
     .min(1, 'Košík je prázdný')
@@ -42,15 +42,17 @@ export async function reserveOrderAction(
   const container = getContainer()
 
   try {
-    if (!container.limiters.order.tryConsume(await rateLimitKey())) {
-      throw new RateLimitError('Příliš mnoho rezervací za sebou. Zkuste to prosím za chvíli.')
-    }
-
     const parsed = payloadSchema.safeParse(payload)
     if (!parsed.success) {
       throw new ValidationError(
         parsed.error.issues[0]?.message ?? 'Objednávka nemá správný tvar',
       )
+    }
+
+    // Klíč podle e-mailu zákazníka: bez důvěryhodné IP by jeden sdílený kbelík
+    // po deseti rezervacích zastavil prodej všem.
+    if (!container.limiters.order.tryConsume(await rateLimitKey(parsed.data.customer.email))) {
+      throw new RateLimitError('Příliš mnoho rezervací za sebou. Zkuste to prosím za chvíli.')
     }
 
     // Identita se bere ze session, nikdy z těla požadavku — jinak by si kdokoli

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { FARMER_STATE } from './tests/e2e/helpers'
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000'
 
@@ -9,7 +10,7 @@ export default defineConfig({
 
   /**
    * Scénáře sdílejí jednu databázi a navzájem si mění sklad i objednávky, takže
-   * běží po jednom. Paralelní běh by dělal testy nespolehlivými podle pořadí.
+   * běží po jednom. Paralelní běh by dělal výsledky závislé na pořadí.
    */
   fullyParallel: false,
   workers: 1,
@@ -26,5 +27,22 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // Jedno přihlášení pro všechny admin testy. Aplikace omezuje počet pokusů na pět,
+    // takže přihlašovat se v každém testu by narazilo na rate limit.
+    { name: 'prihlaseni', testMatch: /auth\.setup\.ts/ },
+
+    {
+      name: 'navstevnik',
+      testMatch: /(nakup|pristup)\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+
+    {
+      name: 'farmar',
+      testMatch: /admin\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], storageState: FARMER_STATE },
+      dependencies: ['prihlaseni'],
+    },
+  ],
 })

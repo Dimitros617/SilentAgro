@@ -51,12 +51,16 @@ export async function requireFarmer(): Promise<SessionPayload> {
  *
  * `X-Forwarded-For` se čte jen tehdy, když je před aplikací skutečně proxy — jinak
  * si hlavičku nastaví kdokoli a limit podle IP by šel obejít jedním polem v požadavku.
- * Bez proxy se používá jediný sdílený klíč: limit je pak společný pro všechny, což je
- * pořád lepší než limit, který nic neomezuje.
+ *
+ * `subject` (typicky e-mail) je druhá část klíče a je podstatná: bez důvěryhodné IP by
+ * všichni sdíleli jeden kbelík a pět překlepů v hesle od jednoho člověka by na čtvrt
+ * hodiny zamklo přihlášení celé farmě. Limit na účet chrání před hádáním hesla a
+ * nikoho cizího nezablokuje.
  */
-export async function rateLimitKey(): Promise<string> {
-  if (!getContainer().config.trustProxy) return 'shared'
+export async function rateLimitKey(subject = ''): Promise<string> {
+  const ip = getContainer().config.trustProxy
+    ? ((await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown')
+    : 'no-proxy'
 
-  const forwarded = (await headers()).get('x-forwarded-for')
-  return forwarded?.split(',')[0]?.trim() || 'shared'
+  return `${ip}|${subject.trim().toLowerCase()}`
 }

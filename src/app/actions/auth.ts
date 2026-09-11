@@ -15,8 +15,10 @@ export async function loginAction(
 ): Promise<Result<AuthResult, string>> {
   const container = getContainer()
 
+  const email = String(formData.get('email') ?? '')
+
   try {
-    if (!container.limiters.login.tryConsume(await rateLimitKey())) {
+    if (!container.limiters.login.tryConsume(await rateLimitKey(email))) {
       throw new RateLimitError('Příliš mnoho pokusů o přihlášení. Zkuste to prosím za chvíli.')
     }
 
@@ -24,7 +26,7 @@ export async function loginAction(
       uow: container.uow,
       hasher: container.hasher,
     }).execute({
-      email: String(formData.get('email') ?? ''),
+      email,
       password: String(formData.get('password') ?? ''),
     })
 
@@ -43,8 +45,10 @@ export async function registerAction(
 ): Promise<Result<AuthResult, string>> {
   const container = getContainer()
 
+  const email = String(formData.get('email') ?? '')
+
   try {
-    if (!container.limiters.register.tryConsume(await rateLimitKey())) {
+    if (!container.limiters.register.tryConsume(await rateLimitKey(email))) {
       throw new RateLimitError('Příliš mnoho registrací. Zkuste to prosím za chvíli.')
     }
 
@@ -53,7 +57,7 @@ export async function registerAction(
       hasher: container.hasher,
     }).execute({
       name: String(formData.get('name') ?? ''),
-      email: String(formData.get('email') ?? ''),
+      email,
       password: String(formData.get('password') ?? ''),
     })
 
