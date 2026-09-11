@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { advanceOrderStatusAction, setOrderPaidAction } from '@/app/actions/admin'
 import type { OrderRowView } from '@/application/dto'
 import { useToast } from '@/components/layout/toast'
@@ -14,25 +14,29 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 
 function OrderRow({ initial }: { initial: OrderRowView }) {
   const [row, setRow] = useState(initial)
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
   const { show } = useToast()
 
-  const advance = () => {
-    startTransition(async () => {
+  const advance = async () => {
+    setPending(true)
+    try {
       const result = await advanceOrderStatusAction(row.id)
       if (result.ok) setRow(result.value)
       else show(result.error)
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
-  const togglePaid = (paid: boolean) => {
+  const togglePaid = async (paid: boolean) => {
     const previous = { isPaid: row.isPaid, paidAtLabel: row.paidAtLabel }
     // Optimistické překreslení: zaškrtávátko musí reagovat hned, ale při chybě
     // se vrátí zpět. Bez návratu by tvrdilo „zaplaceno“ i po neúspěšném zápisu
     // a farmář by vydal brambory za nic.
     setRow((current) => ({ ...current, isPaid: paid, paidAtLabel: paid ? '…' : null }))
 
-    startTransition(async () => {
+    setPending(true)
+    try {
       const result = await setOrderPaidAction(row.id, paid)
       if (result.ok) {
         setRow((current) => ({ ...current, ...result.value }))
@@ -40,7 +44,9 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
         setRow((current) => ({ ...current, ...previous }))
         show(result.error)
       }
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -77,7 +83,7 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
                 type="checkbox"
                 checked={row.isPaid}
                 disabled={pending}
-                onChange={(event) => togglePaid(event.target.checked)}
+                onChange={(event) => void togglePaid(event.target.checked)}
               />
               <span>Zaplaceno</span>
             </label>
@@ -92,7 +98,7 @@ function OrderRow({ initial }: { initial: OrderRowView }) {
         )}
       </div>
 
-      <button type="button" className={STATUS_CLASS[row.status]} onClick={advance} disabled={pending}>
+      <button type="button" className={STATUS_CLASS[row.status]} onClick={() => void advance()} disabled={pending}>
         {row.statusLabel}
       </button>
     </div>

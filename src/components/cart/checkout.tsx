@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useState } from 'react'
 import { reserveOrderAction } from '@/app/actions/order'
 import type { VarietyView } from '@/application/dto'
 import { useCart } from '@/components/cart/cart-provider'
@@ -31,7 +31,7 @@ const formatKg = (value: number) =>
 export function Checkout({ varieties }: { varieties: VarietyView[] }) {
   const { lines, dispatch } = useCart()
   const router = useRouter()
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
   const [errors, setErrors] = useState<CheckoutErrors>({})
   const [serverError, setServerError] = useState('')
 
@@ -67,13 +67,20 @@ export function Checkout({ varieties }: { varieties: VarietyView[] }) {
 
   const update = (patch: Partial<CheckoutForm>) => setForm((current) => ({ ...current, ...patch }))
 
-  const submit = () => {
+  /**
+   * Záměrně bez `useTransition`: `router.push` volaný uvnitř přechodu se v App Routeru
+   * ztratí — server action doběhne, košík se vyprázdní, ale k navigaci nedojde.
+   * Vlastní příznak `pending` dělá totéž pro zablokování tlačítka a navigace proběhne
+   * mimo přechod.
+   */
+  const submit = async () => {
     const found = validateCheckout(form)
     setErrors(found)
     setServerError('')
     if (hasErrors(found)) return
 
-    startTransition(async () => {
+    setPending(true)
+    try {
       const result = await reserveOrderAction({
         customer: {
           name: form.name,
@@ -96,7 +103,9 @@ export function Checkout({ varieties }: { varieties: VarietyView[] }) {
 
       dispatch({ type: 'clear' })
       router.push(`/rezervace/${result.value.token}`)
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
   if (rows.length === 0) {
@@ -256,7 +265,7 @@ export function Checkout({ varieties }: { varieties: VarietyView[] }) {
           type="button"
           className="btn btn--gold btn--block btn--lg"
           style={{ marginTop: 20 }}
-          onClick={submit}
+          onClick={() => void submit()}
           disabled={pending}
         >
           {pending ? 'Rezervuji…' : 'Závazně rezervovat'}

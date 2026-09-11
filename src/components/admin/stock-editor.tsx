@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { deactivateVarietyAction, upsertVarietyAction } from '@/app/actions/admin'
 import type { AdminVarietyView } from '@/application/dto'
 import { useToast } from '@/components/layout/toast'
@@ -44,14 +44,15 @@ const toNumber = (value: string) => Number.parseFloat(value.replace(',', '.')) |
 function VarietyRow({ initial, onRemoved }: { initial: AdminVarietyView; onRemoved: () => void }) {
   const [draft, setDraft] = useState<Draft>(() => toDraft(initial))
   const [expanded, setExpanded] = useState(false)
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
   const { show } = useToast()
 
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }))
 
   /** Uložení je vědomý krok, ne auto-save — jinak by každý stisk klávesy šel na server. */
-  const save = () => {
-    startTransition(async () => {
+  const save = async () => {
+    setPending(true)
+    try {
       const result = await upsertVarietyAction({
         id: initial.id,
         name: draft.name,
@@ -63,11 +64,14 @@ function VarietyRow({ initial, onRemoved }: { initial: AdminVarietyView; onRemov
         capacityKg: toNumber(draft.capacityKg),
       })
       show(result.ok ? `${draft.name} uloženo` : result.error)
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
-  const remove = () => {
-    startTransition(async () => {
+  const remove = async () => {
+    setPending(true)
+    try {
       const result = await deactivateVarietyAction(initial.id)
       if (result.ok) {
         show(`${initial.name} stažena z burzy`)
@@ -75,7 +79,9 @@ function VarietyRow({ initial, onRemoved }: { initial: AdminVarietyView; onRemov
       } else {
         show(result.error)
       }
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
   const shiftStock = (delta: number) =>
@@ -152,14 +158,14 @@ function VarietyRow({ initial, onRemoved }: { initial: AdminVarietyView; onRemov
         </label>
 
         <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
-          <button type="button" className="btn btn--primary" onClick={save} disabled={pending}>
+          <button type="button" className="btn btn--primary" onClick={() => void save()} disabled={pending}>
             Uložit
           </button>
           <button
             type="button"
             className="btn btn--ghost"
             style={{ color: 'var(--clay)', borderColor: '#e8d4cd' }}
-            onClick={remove}
+            onClick={() => void remove()}
             disabled={pending}
           >
             Smazat
@@ -234,13 +240,14 @@ function AddVarietyForm({ onAdded }: { onAdded: (variety: AdminVarietyView) => v
     stockKg: '150',
     capacityKg: '150',
   })
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
   const { show } = useToast()
 
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }))
 
-  const add = () => {
-    startTransition(async () => {
+  const add = async () => {
+    setPending(true)
+    try {
       const stock = toNumber(draft.stockKg)
       const result = await upsertVarietyAction({
         id: null,
@@ -262,7 +269,9 @@ function AddVarietyForm({ onAdded }: { onAdded: (variety: AdminVarietyView) => v
       } else {
         show(result.error)
       }
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -311,7 +320,7 @@ function AddVarietyForm({ onAdded }: { onAdded: (variety: AdminVarietyView) => v
             onChange={(event) => update({ priceCzk: event.target.value })}
           />
         </label>
-        <button type="button" className="btn btn--primary" onClick={add} disabled={pending}>
+        <button type="button" className="btn btn--primary" onClick={() => void add()} disabled={pending}>
           Přidat
         </button>
       </div>

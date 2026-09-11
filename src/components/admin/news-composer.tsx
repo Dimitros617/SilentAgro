@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { deleteNewsAction, publishNewsAction } from '@/app/actions/admin'
 import type { NewsView } from '@/application/dto'
 import { NewsCard } from '@/components/home/news-grid'
@@ -16,7 +16,7 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
   const [tag, setTag] = useState<NewsTag>(NewsTag.HARVEST)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [pending, startTransition] = useTransition()
+  const [pending, setPending] = useState(false)
   const { show } = useToast()
 
   const upload = async (file: File) => {
@@ -41,8 +41,9 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
     }
   }
 
-  const publish = () => {
-    startTransition(async () => {
+  const publish = async () => {
+    setPending(true)
+    try {
       const result = await publishNewsAction({ title, body, tag, imageUrl })
       if (result.ok) {
         setPosts((current) => [result.value, ...current])
@@ -54,15 +55,20 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
       } else {
         show(result.error)
       }
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
-  const remove = (id: number) => {
-    startTransition(async () => {
+  const remove = async (id: number) => {
+    setPending(true)
+    try {
       const result = await deleteNewsAction(id)
       if (result.ok) setPosts((current) => current.filter((post) => post.id !== id))
       else show(result.error)
-    })
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -140,7 +146,7 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
         <button
           type="button"
           className="btn btn--primary"
-          onClick={publish}
+          onClick={() => void publish()}
           disabled={pending || uploading}
         >
           Zveřejnit na homepage
@@ -158,7 +164,7 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
                 type="button"
                 className="btn btn--danger"
                 style={{ position: 'absolute', top: 12, right: 12 }}
-                onClick={() => remove(post.id)}
+                onClick={() => void remove(post.id)}
                 disabled={pending}
               >
                 smazat
