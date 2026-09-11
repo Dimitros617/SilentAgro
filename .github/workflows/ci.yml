@@ -1,0 +1,212 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Výchozí GITHUB_TOKEN má právo zápisu do repozitáře. Žádná z těchto úloh ho
+# nepotřebuje, takže se hned na začátku omezí na čtení.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  quality:
+    name: Lint, typecheck a unit testy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test -- --coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  integration:
+    name: Integrační testy proti MySQL
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: silentagro_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # Integrační testy potřebují obě proměnné a helper odmítne běžet, když jsou stejné.
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/silentagro_dev_unused
+      TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/silentagro_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Nasadit migrace do testovací databáze
+        run: DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+
+      - run: npm run test:integration
+
+  e2e:
+    name: End-to-end proti sestavě v Dockeru
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Připravit .env s náhodnými tajemstvími
+        run: |
+          {
+            echo "APP_ENV=production"
+            echo "MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)"
+            echo "MYSQL_PASSWORD=$(openssl rand -hex 16)"
+            echo "AUTH_SECRET=$(openssl rand -base64 48)"
+            echo "MAIL_DRIVER=smtp"
+            echo "SMTP_HOST=mailpit"
+            echo "SMTP_PORT=1025"
+            echo "MAIL_FROM=SilentAgro <farma@silentagro.cz>"
+            echo "FARMER_EMAIL=farma@silentagro.cz"
+            echo "BANK_ACCOUNT_IBAN=CZ6508000000192000145399"
+            echo "BANK_ACCOUNT_NUMBER=2000145399/0800"
+            echo "PUBLIC_BASE_URL=http://localhost:3000"
+          } >> .env
+          # Heslo farmáře potřebuje seed i Playwright, takže jde přes prostředí kroku,
+          # ne grepem ze souboru — v hesle můžou být znaky, které by shell rozbily.
+          FARMER_PASSWORD="$(openssl rand -hex 12)"
+          echo "SEED_FARMER_PASSWORD=$FARMER_PASSWORD" >> .env
+          echo "E2E_FARMER_PASSWORD=$FARMER_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Spustit sestavu
+        run: docker compose --profile mail up -d --build
+
+      - name: Počkat na health
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/api/health | grep -q '"database":"up"'; then
+              echo "Aplikace odpovídá."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Aplikace nenaběhla."
+          docker compose ps
+          docker compose logs --no-color
+          exit 1
+
+      - name: Naplnit databázi
+        # Seeder je jednorázový kontejner ze stage builder — runtime image tsx nemá.
+        run: docker compose --profile seed run --rm -e SEED_FARMER_PASSWORD="$E2E_FARMER_PASSWORD" seeder
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+
+      - name: Logy při selhání
+        if: failure()
+        run: docker compose logs --no-color
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  security:
+    name: Bezpečnostní kontroly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Audit produkčních závislostí
+        # Jen produkční strom. Zranitelnost ve vývojovém nástroji se do běžící
+        # aplikace nedostane a shozená pipeline by vedla k tomu, že si na ni tým zvykne.
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Hledání tajemství v historii
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        # V organizačním repozitáři vyžaduje gitleaks licenci. Bez ní krok selže,
+        # ale nesmí tím shodit celou kontrolu — ostatní nálezy jsou pořád platné.
+        continue-on-error: true
+
+      - name: Sestavit image pro sken
+        run: docker build -t silentagro:scan --target runner .
+
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: silentagro:scan
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          # Zranitelnosti bez dostupné opravy build neshazují — tým s nimi stejně
+          # nic neudělá. Opravitelné HIGH a CRITICAL ano.
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Odeslat nálezy do Security tabu
+        uses: github/codeql-action/upload-sarif@v3
+        # `always()` schválně: když Trivy najde chybu a skončí nenulově, výsledek
+        # se musí nahrát tím spíš.
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+        continue-on-error: true
