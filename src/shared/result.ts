@@ -5,11 +5,24 @@
  * hláškou a uživatel by nevěděl, co se stalo. Místo toho vracejí `Result`, který jde
  * bezpečně serializovat a vykreslit.
  */
-export type Result<T, E = string> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: E; readonly code?: string }
+export interface Success<T> {
+  readonly ok: true
+  readonly value: T
+}
 
-export const ok = <T>(value: T): Result<T, never> => ({ ok: true, value })
+export interface Failure<E = string> {
+  readonly ok: false
+  readonly error: E
+  readonly code?: string
+}
 
-export const err = (error: string, code?: string): Result<never, string> =>
+export type Result<T, E = string> = Success<T> | Failure<E>
+
+export const ok = <T>(value: T): Success<T> => ({ ok: true, value })
+
+/**
+ * Vrací `Failure`, ne `Result`. Volající se tak dostane k `error` bez zužování typu —
+ * u funkce, která nikdy neuspěje, je zúžení jen šum.
+ */
+export const err = (error: string, code?: string): Failure<string> =>
   code === undefined ? { ok: false, error } : { ok: false, error, code }
