@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { AuthorizeFarmerSession } from '@/application/use-cases/auth'
+import { User } from '@/domain/entities'
 import { LoginUser, RegisterUser } from '@/application/use-cases/auth'
 import { UserRole } from '@/domain/enums'
 import { AuthError, ConflictError, ValidationError } from '@/domain/errors'
@@ -105,6 +107,102 @@ describe('RegisterUser', () => {
     await expect(
       ctx.register.execute({ name: 'Jan', email: 'JAN@EMAIL.CZ', password: 'jineheslo' }),
     ).rejects.toThrow(ConflictError)
+  })
+  it('razítkuje registraci časem z hodin aplikace', async () => {
+    // hranice pro přiřazení hostovských objednávek porovnává orders.created_at
+    // s users.created_at; kdyby druhý čas psala databáze, šlo by o jiné hodiny
+    const ctx = await setup()
+    await ctx.register.execute({ name: 'Jan Novák', email: 'jan@email.cz', password: 'tajneheslo' })
+
+    expect(ctx.users.last()?.createdAt).toEqual(new Date('2026-09-10T18:00:00Z'))
+  })
+})
+
+describe('AuthorizeFarmerSession', () => {
+  const ISSUED_AT = new Date('2026-09-11T10:00:00Z')
+
+  const farmerWith = async (
+    overrides: { role?: UserRole; sessionsInvalidBefore?: Date | null; deactivatedAt?: Date | null } = {},
+  ) => {
+    const bundle = makeBundle()
+    const created = await bundle.users.create({
+      email: EmailAddress.of('farma@silentagro.cz'),
+      name: 'Farmář Milan',
+      passwordHash: 'hash',
+      role: overrides.role ?? UserRole.FARMER,
+      createdAt: new Date('2026-08-01T09:00:00Z'),
+      verificationToken: null,
+      verificationExpiresAt: null,
+    })
+
+    await bundle.users.save(
+      User.rehydrate({
+        id: created.id,
+        email: created.email,
+        name: created.name,
+        role: overrides.role ?? UserRole.FARMER,
+        passwordHash: created.passwordHash,
+        createdAt: created.createdAt,
+        verifiedAt: new Date('2026-08-01T10:00:00Z'),
+        verificationToken: null,
+        verificationExpiresAt: null,
+        deactivatedAt: overrides.deactivatedAt ?? null,
+        sessionsInvalidBefore: overrides.sessionsInvalidBefore ?? null,
+      }),
+    )
+
+    return {
+      bundle,
+      userId: created.id,
+      authorize: new AuthorizeFarmerSession({ uow: bundle.uow }),
+      session: { userId: created.id, role: UserRole.FARMER, name: 'Farmář Milan', issuedAt: ISSUED_AT },
+    }
+  }
+
+  it('pustí farmáře s tokenem vydaným po obnově hesla', async () => {
+    const ctx = await farmerWith({ sessionsInvalidBefore: new Date('2026-09-11T09:00:00Z') })
+
+    expect((await ctx.authorize.execute(ctx.session))?.userId).toBe(ctx.userId)
+  })
+
+  it('odmítne token vydaný před obnovou hesla', async () => {
+    // obnova hesla farmáře je jediná cesta, jak odvolat živou administrátorskou session
+    const ctx = await farmerWith({ sessionsInvalidBefore: new Date('2026-09-11T11:00:00Z') })
+
+    expect(await ctx.authorize.execute(ctx.session)).toBeNull()
+  })
+
+  it('odmítne token vydaný ve stejnou vteřinu jako obnova', async () => {
+    // `iat` má vteřinovou přesnost, takže shoda se musí zahodit — jinak by token
+    // vydaný těsně před obnovou mohl přežít
+    const ctx = await farmerWith({ sessionsInvalidBefore: ISSUED_AT })
+
+    expect(await ctx.authorize.execute(ctx.session)).toBeNull()
+  })
+
+  it('bez odvolání pustí i starý token', async () => {
+    const ctx = await farmerWith()
+
+    expect((await ctx.authorize.execute(ctx.session))?.role).toBe(UserRole.FARMER)
+  })
+
+  it('roli bere z databáze, ne z tokenu', async () => {
+    // token tvrdí FARMER, ale účet už farmářem není
+    const ctx = await farmerWith({ role: UserRole.CUSTOMER })
+
+    expect(await ctx.authorize.execute(ctx.session)).toBeNull()
+  })
+
+  it('odmítne deaktivovaný účet', async () => {
+    const ctx = await farmerWith({ deactivatedAt: new Date('2026-09-10T10:00:00Z') })
+
+    expect(await ctx.authorize.execute(ctx.session)).toBeNull()
+  })
+
+  it('odmítne session smazaného účtu', async () => {
+    const ctx = await farmerWith()
+
+    expect(await ctx.authorize.execute({ ...ctx.session, userId: 999 })).toBeNull()
   })
 })
 

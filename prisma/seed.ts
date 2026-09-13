@@ -184,9 +184,20 @@ export async function ensureFarmer(
   // ohlásil úspěch a přihlášení by dál padalo na "Nesprávné heslo".
   const passwordHash = await bcrypt.hash(farmerPassword, 12)
 
+  // Obnova hesla zároveň odvolá dosud vydané session. Token je podepsaný na sedm dní
+  // a zneplatnit se sám neumí, takže bez tohohle razítka by útočník s ukradenou
+  // sušenkou zůstal v administraci i po změně hesla. Zakládaný účet razítko nepotřebuje
+  // — není co odvolávat.
   const farmer = await prisma.user.upsert({
     where: { email },
-    update: { name, role: 'FARMER', verifiedAt, passwordHash, deactivatedAt: null },
+    update: {
+      name,
+      role: 'FARMER',
+      verifiedAt,
+      passwordHash,
+      deactivatedAt: null,
+      sessionsInvalidBefore: new Date(),
+    },
     create: { email, name, role: 'FARMER', verifiedAt, passwordHash },
   })
 

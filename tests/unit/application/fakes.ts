@@ -287,6 +287,7 @@ export class InMemoryUserRepository implements UserRepository {
       verificationToken: input.verificationToken ?? null,
       verificationExpiresAt: input.verificationExpiresAt ?? null,
       deactivatedAt: null,
+      sessionsInvalidBefore: null,
     })
     this.items.push(user)
     return user

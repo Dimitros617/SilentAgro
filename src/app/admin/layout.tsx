@@ -1,19 +1,20 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { UserRole } from '@/domain/enums'
-import { readSession } from '@/infrastructure/auth/session'
+import { readFarmerSession } from '@/infrastructure/auth/session'
 import { AdminTabs } from '@/components/admin/admin-tabs'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   /**
-   * Druhá kontrola role. Middleware přesměrovává prohlížeč, ale spoléhat se jen na něj
-   * by znamenalo, že o přístupu rozhoduje vrstva, kterou lze obejít přímým požadavkem.
+   * Druhá kontrola role, tentokrát proti databázi. Middleware přesměrovává prohlížeč,
+   * ale spoléhat se jen na něj by znamenalo, že o přístupu rozhoduje vrstva, kterou lze
+   * obejít přímým požadavkem — a která navíc na Edge nevidí do databáze, takže o
+   * odebrané roli ani odvolané session neví.
    */
-  const session = await readSession()
-  if (!session || session.role !== UserRole.FARMER) {
+  const session = await readFarmerSession()
+  if (!session) {
     redirect('/?prihlaseni=vyzadovano')
   }
 

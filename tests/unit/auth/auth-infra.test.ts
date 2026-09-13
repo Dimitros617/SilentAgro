@@ -1,3 +1,4 @@
+import { SignJWT } from 'jose'
 import { describe, expect, it } from 'vitest'
 import { UserRole } from '@/domain/enums'
 import { BcryptPasswordHasher } from '@/infrastructure/auth/bcrypt-password-hasher'
@@ -9,7 +10,32 @@ const payload = { userId: 7, role: UserRole.FARMER, name: 'Farmář Milan' }
 describe('JoseTokenService', () => {
   it('podepíše a ověří token', async () => {
     const service = new JoseTokenService(secret)
-    expect(await service.verify(await service.sign(payload))).toEqual(payload)
+    expect(await service.verify(await service.sign(payload))).toEqual({
+      ...payload,
+      issuedAt: expect.any(Date),
+    })
+  })
+
+  it('vrátí okamžik vydání tokenu', async () => {
+    // podle něj se pozná session vydaná ještě před odvoláním přístupu
+    const service = new JoseTokenService(secret)
+    const before = Math.floor(Date.now() / 1000)
+
+    const verified = await service.verify(await service.sign(payload))
+
+    expect(verified?.issuedAt.getTime()).toBeGreaterThanOrEqual(before * 1000)
+    expect(verified?.issuedAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000)
+  })
+
+  it('odmítne token bez okamžiku vydání', async () => {
+    // odvolání session stojí na `iat`; token, který ho vynechá, by kontrolu obešel
+    const forged = await new SignJWT({ role: UserRole.FARMER, name: 'Farmář Milan' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject('7')
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 3600)
+      .sign(new TextEncoder().encode(secret))
+
+    expect(await new JoseTokenService(secret).verify(forged)).toBeNull()
   })
 
   it('odmítne token podepsaný jiným tajemstvím', async () => {

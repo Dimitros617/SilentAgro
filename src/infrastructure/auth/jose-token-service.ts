@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { UserRole } from '@/domain/enums'
-import type { SessionPayload, TokenService } from '@/domain/ports/services'
+import type { SessionPayload, TokenService, VerifiedSession } from '@/domain/ports/services'
 
 const ALGORITHM = 'HS256'
 const DEFAULT_TTL_SECONDS = 7 * 24 * 3600
@@ -34,7 +34,7 @@ export class JoseTokenService implements TokenService {
       .sign(this.key)
   }
 
-  async verify(token: string): Promise<SessionPayload | null> {
+  async verify(token: string): Promise<VerifiedSession | null> {
     try {
       // Seznam algoritmů je povinný. Bez něj by knihovna přijala token, který si
       // algoritmus určí sám — včetně "none", tedy zcela bez podpisu.
@@ -47,7 +47,16 @@ export class JoseTokenService implements TokenService {
       // i kdyby byl podpis v pořádku.
       if (!isKnownRole(payload.role)) return null
 
-      return { userId, role: payload.role, name: String(payload.name ?? '') }
+      // Odvolání session stojí na `iat`. Token, který ho vynechá, by kontrolu obešel,
+      // takže chybějící okamžik vydání je stejně neplatný jako špatný podpis.
+      if (typeof payload.iat !== 'number') return null
+
+      return {
+        userId,
+        role: payload.role,
+        name: String(payload.name ?? ''),
+        issuedAt: new Date(payload.iat * 1000),
+      }
     } catch {
       return null
     }

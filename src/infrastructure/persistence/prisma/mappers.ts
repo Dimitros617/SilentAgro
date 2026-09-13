@@ -181,4 +181,5 @@ export const toUser = (row: UserRow): User =>
     verificationToken: row.verificationToken,
     verificationExpiresAt: row.verificationExpiresAt,
     deactivatedAt: row.deactivatedAt,
+    sessionsInvalidBefore: row.sessionsInvalidBefore,
   })

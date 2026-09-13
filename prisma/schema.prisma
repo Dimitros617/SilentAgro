@@ -67,6 +67,12 @@ model User {
   // Deaktivovaný účet se nepřihlásí, ale jeho objednávky zůstávají čitelné.
   deactivatedAt DateTime? @map("deactivated_at")
 
+  // Tokeny vydané dřív než v tenhle okamžik neplatí. Zapisuje ho obnova hesla
+  // farmáře (prisma/seed.ts) — jediná cesta, jak odvolat živou administrátorskou
+  // session, protože token je podepsaný na sedm dní a sám o sobě zneplatnit nejde.
+  // NULL = nic se neodvolávalo.
+  sessionsInvalidBefore DateTime? @map("sessions_invalid_before")
+
   orders    Order[]
   newsPosts NewsPost[]
 

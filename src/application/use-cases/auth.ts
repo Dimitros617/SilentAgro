@@ -3,7 +3,13 @@ import type { User } from '@/domain/entities'
 import { UserRole } from '@/domain/enums'
 import { AuthError, ConflictError, ValidationError } from '@/domain/errors'
 import type { UserNotifier } from '@/domain/ports/order-presentation'
-import type { Clock, Logger, PasswordHasher, TokenGenerator } from '@/domain/ports/services'
+import type {
+  Clock,
+  Logger,
+  PasswordHasher,
+  TokenGenerator,
+  VerifiedSession,
+} from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { EmailAddress } from '@/domain/value-objects/email-address'
 import { verificationExpiry } from '@/application/use-cases/users'
@@ -134,11 +140,24 @@ export class LoginUser {
   }
 }
 
-export class GetCurrentUser {
+/**
+ * Pustí dál jen session, která pořád patří aktivnímu farmáři.
+ *
+ * Rozhoduje databáze, ne token: token je podepsaný na sedm dní, takže odebraná role,
+ * deaktivace ani obnova hesla by se do něj zpětně nepromítly. Tohle je ta druhá
+ * polovina — první je podpis, který ověří middleware na Edge, kam se na databázi
+ * dosáhnout nedá.
+ */
+export class AuthorizeFarmerSession {
   constructor(private readonly deps: { uow: UnitOfWork }) {}
 
-  async execute(userId: number): Promise<AuthResult | null> {
-    const user = await this.deps.uow.repos.users.findById(userId)
-    return user ? toAuthResult(user) : null
+  async execute(session: VerifiedSession): Promise<AuthResult | null> {
+    const user = await this.deps.uow.repos.users.findById(session.userId)
+    if (!user) return null
+    if (user.role !== UserRole.FARMER) return null
+    if (!user.isActive) return null
+    if (!user.acceptsTokenIssuedAt(session.issuedAt)) return null
+
+    return toAuthResult(user)
   }
 }

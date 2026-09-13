@@ -31,9 +31,17 @@ export interface SessionPayload {
   readonly name: string
 }
 
+/**
+ * Ověřená session nese navíc okamžik vydání tokenu (`iat`). Bez něj by nešlo poznat,
+ * jestli token nevznikl ještě před odvoláním přístupu.
+ */
+export interface VerifiedSession extends SessionPayload {
+  readonly issuedAt: Date
+}
+
 export interface TokenService {
   sign(payload: SessionPayload): Promise<string>
-  verify(token: string): Promise<SessionPayload | null>
+  verify(token: string): Promise<VerifiedSession | null>
 }
 
 /**

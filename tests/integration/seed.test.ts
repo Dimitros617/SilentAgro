@@ -32,6 +32,17 @@ describe('seed', () => {
     expect(await bcrypt.compare('prvniHeslo123', after.passwordHash)).toBe(false)
   })
 
+  it('obnovou hesla odvolá dosud vydané administrátorské session', async () => {
+    // Token platí sedm dní a zneplatnit se sám neumí; bez tohohle razítka by
+    // útočník s ukradenou sušenkou zůstal v administraci i po změně hesla.
+    await seed(testPrisma, 'prvniHeslo123')
+    expect((await farmer()).sessionsInvalidBefore).toBeNull()
+
+    await seed(testPrisma, 'druheHeslo456')
+
+    expect((await farmer()).sessionsInvalidBefore).not.toBeNull()
+  })
+
   it('vrátí deaktivovaného farmáře zpátky do provozu', async () => {
     // Kdo se omylem deaktivuje v administraci, se jinak do aplikace nedostane
     // vůbec — žádný jiný účet roli farmáře nemá.

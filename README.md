@@ -51,7 +51,14 @@ zastaví aplikaci hned při startu; důvod najdete v `docker compose logs app`. 
 takový překlep projevil až jako chybová stránka při každém požadavku.
 
 Zapomenuté heslo do administrace se vrací seedem: změňte `SEED_FARMER_PASSWORD`
-v `.env` a pusťte seeder znovu. Heslo se přepíše a případná deaktivace účtu zruší.
+v `.env` a pusťte seeder znovu. Heslo se přepíše, případná deaktivace účtu zruší
+a zároveň přestanou platit administrátorské session vydané do té chvíle — kdo byl
+přihlášený, musí se přihlásit znovu. Bez toho by změna hesla útočníka s ukradenou
+sušenkou z administrace nevyhodila: token je podepsaný na sedm dní.
+
+Při podezření na únik samotného tokenu (ne hesla) zabere navíc rotace `AUTH_SECRET`
+a restart aplikace. Podpisy přestanou sedět, takže naráz padnou úplně všechny session,
+zákaznické i farmářovy. Zákazníky to nic nestojí — objednávat jde i bez účtu.
 
 ### Co si nastavíte bez zásahu do kódu
 

@@ -124,6 +124,7 @@ export interface UserProps {
   readonly verificationToken: string | null
   readonly verificationExpiresAt: Date | null
   readonly deactivatedAt: Date | null
+  readonly sessionsInvalidBefore: Date | null
 }
 
 export class User {
@@ -142,6 +143,7 @@ export class User {
   get verificationToken(): string | null { return this.props.verificationToken }
   get verificationExpiresAt(): Date | null { return this.props.verificationExpiresAt }
   get deactivatedAt(): Date | null { return this.props.deactivatedAt }
+  get sessionsInvalidBefore(): Date | null { return this.props.sessionsInvalidBefore }
 
   get isVerified(): boolean { return this.props.verifiedAt !== null }
 
@@ -153,6 +155,20 @@ export class User {
     if (this.props.verificationToken === null) return false
     if (this.props.verificationExpiresAt === null) return false
     return this.props.verificationExpiresAt.getTime() > now.getTime()
+  }
+
+  /**
+   * Platí ještě token vydaný v `issuedAt`? Odvolání (obnova hesla farmáře) zneplatní
+   * všechno vydané dřív. Porovnává se neostře: `iat` má vteřinovou přesnost, takže
+   * token vydaný ve stejnou vteřinu jako odvolání padá taky — radši odhlásit navíc
+   * než nechat žít session, kterou měla obnova hesla zabít.
+   *
+   * Sloupec se zapisuje jen seedem, proto ho `PrismaUserRepository.save` nezná;
+   * přidávat nepoužitou zápisovou cestu by byl mrtvý kód.
+   */
+  acceptsTokenIssuedAt(issuedAt: Date): boolean {
+    const invalidBefore = this.props.sessionsInvalidBefore
+    return invalidBefore === null || issuedAt.getTime() > invalidBefore.getTime()
   }
 
   /** Ověření token zahazuje — odkaz ze staré zprávy nesmí platit napořád. */
