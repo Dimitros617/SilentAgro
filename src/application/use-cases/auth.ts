@@ -71,6 +71,7 @@ export class RegisterUser {
         name,
         passwordHash: await this.deps.hasher.hash(input.password),
         role: UserRole.CUSTOMER,
+        createdAt: now,
         verificationToken,
         verificationExpiresAt: verificationExpiry(now),
       })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  GetUserDetail,
   MarkUserVerified,
   ResendVerification,
   SendMessageToUser,
@@ -7,11 +8,15 @@ import {
   VerifyEmail,
   verificationExpiry,
 } from '@/application/use-cases/users'
-import { UserRole } from '@/domain/enums'
+import { OrderItem } from '@/domain/entities/order'
+import { DeliveryMethod, PaymentMethod, UserRole } from '@/domain/enums'
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
 import { EmailAddress } from '@/domain/value-objects/email-address'
+import { Kilograms } from '@/domain/value-objects/kilograms'
+import { Money } from '@/domain/value-objects/money'
 import {
   FakeUserNotifier,
+  type InMemoryOrderRepository,
   SequentialTokenGenerator,
   fixedClock,
   makeBundle,
@@ -19,6 +24,35 @@ import {
 
 const NOW = '2026-09-11T10:00:00Z'
 const clock = fixedClock(NOW)
+
+/** Účet vznikne 5. 9.; objednávky kolem toho data rozhodují, co si ověření připíše. */
+const REGISTERED_AT = new Date('2026-09-05T09:00:00Z')
+const BEFORE_REGISTRATION = new Date('2026-09-01T08:00:00Z')
+const AFTER_REGISTRATION = new Date('2026-09-08T08:00:00Z')
+
+const placeOrder = (
+  orders: InMemoryOrderRepository,
+  options: { email: string; createdAt: Date; userId?: number | null },
+) =>
+  orders.create({
+    customer: { name: 'Jan Novák', email: EmailAddress.of(options.email), phone: '', note: '' },
+    items: [
+      OrderItem.create({
+        varietyId: 1,
+        varietyName: 'Bernie',
+        unitPrice: Money.fromCzk(20),
+        quantity: Kilograms.of(1),
+      }),
+    ],
+    delivery: DeliveryMethod.PICKUP,
+    payment: PaymentMethod.CASH,
+    subtotal: Money.fromCzk(20),
+    deliveryFee: Money.zero(),
+    total: Money.fromCzk(20),
+    userId: options.userId ?? null,
+    publicToken: `token-o-${options.createdAt.getTime()}-${options.userId ?? 'host'}`,
+    createdAt: options.createdAt,
+  })
 
 const setup = async (
   options: { role?: UserRole; token?: string; expiresAt?: Date; verified?: boolean } = {},
@@ -33,6 +67,7 @@ const setup = async (
     role: options.role ?? UserRole.CUSTOMER,
     verificationToken: options.token ?? 'token-abc',
     verificationExpiresAt: options.expiresAt ?? verificationExpiry(new Date(NOW)),
+    createdAt: REGISTERED_AT,
   })
 
   if (options.verified) {
@@ -96,6 +131,20 @@ describe('MarkUserVerified', () => {
     await expect(
       new MarkUserVerified({ uow: ctx.uow, clock }).execute(ctx.user.id),
     ).rejects.toThrow(ConflictError)
+  })
+
+  it('ruční ověření připíše hostovské objednávky stejně jako odkaz', async () => {
+    // farmář ověřuje účet zákazníkovi, který se k e-mailu nedostane — jinak by mu
+    // dřívější objednávky zůstaly nepřiřazené
+    const ctx = await setup()
+    const order = await placeOrder(ctx.orders, {
+      email: 'jan@email.cz',
+      createdAt: BEFORE_REGISTRATION,
+    })
+
+    await new MarkUserVerified({ uow: ctx.uow, clock }).execute(ctx.user.id)
+
+    expect((await ctx.orders.findById(order.id))?.userId).toBe(ctx.user.id)
   })
 })
 
@@ -190,5 +239,86 @@ describe('ResendVerification', () => {
       ConflictError,
     )
     expect(ctx.notifier.verifications).toHaveLength(0)
+  })
+})
+
+describe('VerifyEmail — přiřazení hostovských objednávek', () => {
+  it('připíše účtu hostovskou objednávku z doby před registrací', async () => {
+    const ctx = await setup()
+    const order = await placeOrder(ctx.orders, {
+      email: 'jan@email.cz',
+      createdAt: BEFORE_REGISTRATION,
+    })
+
+    await new VerifyEmail({ uow: ctx.uow, clock }).execute('token-abc')
+
+    expect((await ctx.orders.findById(order.id))?.userId).toBe(ctx.user.id)
+  })
+
+  it('objednávku zadanou až po registraci si nepřipíše', async () => {
+    // e-mail na objednávce nikdo neověřuje, takže ji na tu adresu mohl zadat kdokoli cizí
+    const ctx = await setup()
+    const order = await placeOrder(ctx.orders, {
+      email: 'jan@email.cz',
+      createdAt: AFTER_REGISTRATION,
+    })
+
+    await new VerifyEmail({ uow: ctx.uow, clock }).execute('token-abc')
+
+    expect((await ctx.orders.findById(order.id))?.userId).toBeNull()
+  })
+
+  it('objednávku patřící jinému účtu nepřebírá', async () => {
+    const ctx = await setup()
+    const order = await placeOrder(ctx.orders, {
+      email: 'jan@email.cz',
+      createdAt: BEFORE_REGISTRATION,
+      userId: 99,
+    })
+
+    await new VerifyEmail({ uow: ctx.uow, clock }).execute('token-abc')
+
+    expect((await ctx.orders.findById(order.id))?.userId).toBe(99)
+  })
+
+  it('objednávku na cizí adresu nepřipíše', async () => {
+    const ctx = await setup()
+    const order = await placeOrder(ctx.orders, {
+      email: 'petr@email.cz',
+      createdAt: BEFORE_REGISTRATION,
+    })
+
+    await new VerifyEmail({ uow: ctx.uow, clock }).execute('token-abc')
+
+    expect((await ctx.orders.findById(order.id))?.userId).toBeNull()
+  })
+
+  it('při neúspěšném ověření nepřipíše nic', async () => {
+    const ctx = await setup({ expiresAt: new Date('2026-09-01T10:00:00Z') })
+    const order = await placeOrder(ctx.orders, {
+      email: 'jan@email.cz',
+      createdAt: BEFORE_REGISTRATION,
+    })
+
+    await expect(new VerifyEmail({ uow: ctx.uow, clock }).execute('token-abc')).rejects.toThrow(
+      NotFoundError,
+    )
+    expect((await ctx.orders.findById(order.id))?.userId).toBeNull()
+  })
+})
+
+describe('GetUserDetail', () => {
+  it('profil ukazuje jen objednávky přiřazené k účtu', async () => {
+    const ctx = await setup()
+    await placeOrder(ctx.orders, { email: 'jan@email.cz', createdAt: AFTER_REGISTRATION })
+    const own = await placeOrder(ctx.orders, {
+      email: 'jan@email.cz',
+      createdAt: AFTER_REGISTRATION,
+      userId: ctx.user.id,
+    })
+
+    const detail = await new GetUserDetail({ uow: ctx.uow }).execute(ctx.user.id)
+
+    expect(detail.orders.map((order) => order.code)).toEqual([own.code])
   })
 })

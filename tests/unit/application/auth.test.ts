@@ -23,6 +23,7 @@ const setup = async (existing: { email: string; password: string; role?: UserRol
       name: 'Existující',
       passwordHash: await hasher.hash(entry.password),
       role: entry.role ?? UserRole.CUSTOMER,
+      createdAt: new Date('2026-09-01T09:00:00Z'),
       verificationToken: null,
       verificationExpiresAt: null,
     })

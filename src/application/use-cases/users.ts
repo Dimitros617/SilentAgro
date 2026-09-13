@@ -4,6 +4,7 @@ import { UserRole } from '@/domain/enums'
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
 import type { UserNotifier } from '@/domain/ports/order-presentation'
 import type { Clock, TokenGenerator } from '@/domain/ports/services'
+import type { RepositoryBundle } from '@/domain/ports/repositories'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import type { User } from '@/domain/entities'
 import { formatCzk, formatDateCs, formatDateTimeCs } from '@/shared/format'
@@ -14,6 +15,21 @@ export const VERIFICATION_TTL_HOURS = 48
 
 export const verificationExpiry = (now: Date): Date =>
   new Date(now.getTime() + VERIFICATION_TTL_HOURS * 3600 * 1000)
+
+/**
+ * Ověřený účet si připíše hostovské objednávky na svou adresu z doby před registrací.
+ * Hranicí je vznik účtu: co přišlo později, mohl na tu adresu poslat kdokoli, protože
+ * e-mail v objednávce se nikde neověřuje.
+ *
+ * Ani ověření ale neprokazuje původ objednávky, jen vlastnictví adresy — objednávku,
+ * kterou na ni před registrací zadal někdo cizí, si účet připíše taky, a od té chvíle
+ * se počítá do jeho útraty. Zbytkové riziko je tedy úzké, ne nulové: útočník musí
+ * objednávku podstrčit dřív, než účet vůbec vznikne, a na adresu, o které netuší,
+ * že si k ní někdo účet založí. Co se tím zavřelo natvrdo, je podvrh kdykoli později —
+ * na existující účet už hostovskou objednávkou dosáhnout nelze.
+ */
+const claimGuestOrders = (repos: RepositoryBundle, user: User): Promise<number> =>
+  repos.orders.claimGuestOrders(user.id, user.email, user.createdAt)
 
 const toUserRow = (
   user: User,
@@ -61,7 +77,7 @@ export class GetUserDetail {
 
     const [stats, customerOrders] = await Promise.all([
       users.orderStats(),
-      orders.listForCustomer(user.id, user.email),
+      orders.listForCustomer(user.id),
     ])
 
     const rows: OrderRowView[] = customerOrders.map(toOrderRow)
@@ -89,6 +105,7 @@ export class VerifyEmail {
       if (!user.canVerifyAt(this.deps.clock.now())) throw new NotFoundError('Ověřovací odkaz')
 
       const verified = await repos.users.save(user.withVerified(this.deps.clock.now()))
+      await claimGuestOrders(repos, verified)
       return { name: verified.name, email: verified.email.value }
     })
   }
@@ -105,6 +122,7 @@ export class MarkUserVerified {
       if (user.isVerified) throw new ConflictError('Účet už je ověřený')
 
       const verified = await repos.users.save(user.withVerified(this.deps.clock.now()))
+      await claimGuestOrders(repos, verified)
       return toUserRow(verified, undefined)
     })
   }

@@ -78,10 +78,17 @@ export interface OrderRepository {
   setPaid(id: number, paidAt: Date | null): Promise<Order>
   cancel(id: number, cancelledAt: Date, reason: string): Promise<Order>
   /**
-   * Objednávky zákazníka. Hledá podle účtu **i podle e-mailu**: tentýž člověk mohl
-   * nakoupit jako host dřív, než si účet založil, a farmáře zajímá celá jeho historie.
+   * Objednávky přiřazené k účtu. Shoda přes e-mail tu záměrně **není**: adresu na
+   * objednávce nikdo neověřuje, takže by si kdokoli hostovskou objednávkou připsal
+   * cizímu účtu historii i útratu. Vazba vzniká jedině zápisem `user_id` — při
+   * objednávce z přihlášeného účtu, nebo při ověření e-mailu (`claimGuestOrders`).
    */
-  listForCustomer(userId: number, email: EmailAddress): Promise<Order[]>
+  listForCustomer(userId: number): Promise<Order[]>
+  /**
+   * Připíše účtu hostovské objednávky na jeho adresu, které vznikly před `placedBefore`.
+   * Hranici určuje use-case, ne repozitář. Vrací počet přiřazených objednávek.
+   */
+  claimGuestOrders(userId: number, email: EmailAddress, placedBefore: Date): Promise<number>
   /** Množství rezervované v objednávkách, které ještě nebyly vydány. */
   reservedKg(): Promise<Kilograms>
   revenueSince(since: Date): Promise<Money>
@@ -109,6 +116,12 @@ export interface NewUserInput {
   readonly name: string
   readonly passwordHash: string
   readonly role: UserRole
+  /**
+   * Čas vzniku účtu posílá aplikace, ne databáze. Proti němu se porovnává
+   * `orders.created_at` při přiřazení hostovských objednávek, a ten pochází
+   * z portu `Clock` — jinak by hranici určovaly dvoje různé hodiny.
+   */
+  readonly createdAt: Date
   readonly verificationToken: string | null
   readonly verificationExpiresAt: Date | null
 }
@@ -132,6 +145,7 @@ export interface UserRepository {
   /**
    * Statistiky pro celý seznam najednou. Počítat je dotazem na uživatele by
    * znamenalo N+1 dotazů u tabulky, kterou farmář otevírá denně.
+   * Počítají se výhradně objednávky přiřazené k účtu přes `user_id`.
    */
   orderStats(): Promise<UserOrderStats[]>
 }

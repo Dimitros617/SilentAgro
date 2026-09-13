@@ -33,7 +33,10 @@ export function UserDetail({ initial }: { initial: UserDetailView }) {
     run(async () => {
       const result = await markUserVerifiedAction(user.id)
       if (result.ok) {
-        // Statistiky se ručním ověřením nemění, takže se přebírají jen údaje o účtu.
+        // Ruční ověření může účtu připsat hostovské objednávky z doby před registrací,
+        // takže čísla i seznam na téhle obrazovce můžou být do dalšího načtení
+        // zastaralá. Akce vrací UserRowView bez statistik, proto se přebírají jen
+        // údaje o účtu; čerstvá čísla přijdou s příštím renderem stránky.
         setUser((current) => ({ ...current, ...result.value, orders: current.orders }))
         show('Účet ověřen')
       } else {

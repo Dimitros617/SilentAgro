@@ -238,13 +238,30 @@ class PrismaOrderRepository implements OrderRepository {
     return toOrder(row)
   }
 
-  async listForCustomer(userId: number, email: EmailAddress): Promise<Order[]> {
+  async listForCustomer(userId: number): Promise<Order[]> {
     const rows = await this.db.order.findMany({
-      where: { OR: [{ userId }, { customerEmail: email.value }] },
+      where: { userId },
       orderBy: { id: 'desc' },
       include: orderInclude,
     })
     return rows.map(toOrder)
+  }
+
+  /**
+   * Zápis jednoho sloupce hromadně, bez průchodu entitou — stejně jako `setPaid`
+   * nebo `cancel`. Tři podmínky drží pravidlo úzké: nepřiřazená objednávka, shoda
+   * s ověřenou adresou a vznik před hranicí, kterou předává use-case.
+   */
+  async claimGuestOrders(
+    userId: number,
+    email: EmailAddress,
+    placedBefore: Date,
+  ): Promise<number> {
+    const result = await this.db.order.updateMany({
+      where: { userId: null, customerEmail: email.value, createdAt: { lt: placedBefore } },
+      data: { userId },
+    })
+    return result.count
   }
 
   async setPaid(id: number, paidAt: Date | null): Promise<Order> {
@@ -341,6 +358,7 @@ class PrismaUserRepository implements UserRepository {
         name: input.name,
         passwordHash: input.passwordHash,
         role: input.role,
+        createdAt: input.createdAt,
         verificationToken: input.verificationToken,
         verificationExpiresAt: input.verificationExpiresAt,
       },
@@ -370,8 +388,11 @@ class PrismaUserRepository implements UserRepository {
   /**
    * Statistiky všech zákazníků jedním dotazem.
    *
-   * Objednávky se párují přes `user_id` i přes e-mail: tentýž člověk mohl nakoupit
-   * jako host dřív, než si účet založil. Zrušené se do útraty nepočítají, ale
+   * Počítají se jen objednávky přiřazené k účtu přes `user_id`. E-mail na objednávce
+   * je neověřený údaj z formuláře, takže párovat přes něj by znamenalo, že si kdokoli
+   * hostovskou objednávkou nafoukne cizímu účtu útratu. Hostovské objednávky z doby
+   * před založením účtu se k němu připíšou při ověření e-mailu; pozdější už ne.
+   * Zrušené se do útraty nepočítají, ale
    * vypisují se zvlášť — farmáře zajímá, kdo často ruší.
    */
   async orderStats(): Promise<UserOrderStats[]> {
@@ -390,7 +411,7 @@ class PrismaUserRepository implements UserRepository {
              COALESCE(SUM(CASE WHEN o.cancelled_at IS NULL THEN o.total_czk ELSE 0 END), 0) AS total_spent,
              MAX(o.created_at) AS last_order_at
       FROM users u
-      LEFT JOIN orders o ON o.user_id = u.id OR o.customer_email = u.email
+      LEFT JOIN orders o ON o.user_id = u.id
       GROUP BY u.id
     `
 

@@ -171,10 +171,44 @@ export class InMemoryOrderRepository implements OrderRepository {
     return next
   }
 
-  async listForCustomer(userId: number, email: EmailAddress): Promise<Order[]> {
-    return [...this.items.values()]
-      .filter((o) => o.userId === userId || o.customer.email.value === email.value)
-      .sort((a, b) => b.id - a.id)
+  async listForCustomer(userId: number): Promise<Order[]> {
+    return [...this.items.values()].filter((o) => o.userId === userId).sort((a, b) => b.id - a.id)
+  }
+
+  async claimGuestOrders(
+    userId: number,
+    email: EmailAddress,
+    placedBefore: Date,
+  ): Promise<number> {
+    let claimed = 0
+    for (const [id, order] of this.items) {
+      if (order.userId !== null) continue
+      if (order.customer.email.value !== email.value) continue
+      if (order.createdAt >= placedBefore) continue
+
+      // Order vazbu na účet měnit neumí, tak se objednávka poskládá znovu.
+      this.items.set(
+        id,
+        Order.rehydrate({
+          id: order.id,
+          code: order.code,
+          publicToken: order.publicToken,
+          customer: order.customer,
+          items: [...order.items],
+          delivery: order.delivery,
+          deliveryFee: order.deliveryFee,
+          payment: order.payment,
+          status: order.status,
+          paidAt: order.paidAt,
+          cancelledAt: order.cancelledAt,
+          cancellationReason: order.cancellationReason,
+          userId,
+          createdAt: order.createdAt,
+        }),
+      )
+      claimed += 1
+    }
+    return claimed
   }
 
   async reservedKg(): Promise<Kilograms> {
@@ -248,7 +282,7 @@ export class InMemoryUserRepository implements UserRepository {
       name: input.name,
       role: input.role,
       passwordHash: input.passwordHash,
-      createdAt: new Date('2026-09-10T12:00:00Z'),
+      createdAt: input.createdAt,
       verifiedAt: null,
       verificationToken: input.verificationToken ?? null,
       verificationExpiresAt: input.verificationExpiresAt ?? null,
@@ -272,6 +306,11 @@ export class InMemoryUserRepository implements UserRepository {
     return [...this.items].sort((a, b) => b.id - a.id)
   }
 
+  /**
+   * Nulový zástupný výpočet. Skutečnou sémantiku `orderStats` drží syrové SQL, takže
+   * se dokazuje v integračních testech (tests/integration/user-order-stats.test.ts);
+   * počítat ji tady znovu by testovalo kopii pravidla, ne pravidlo samo.
+   */
   async orderStats(): Promise<UserOrderStats[]> {
     return this.items.map((user) => ({
       userId: user.id,
