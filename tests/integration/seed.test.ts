@@ -50,3 +50,47 @@ describe('seed', () => {
     await expect(seed(testPrisma, 'krátké')).rejects.toThrow('SEED_FARMER_PASSWORD')
   })
 })
+
+describe('veřejné tokeny demo objednávek', () => {
+  const tokens = async () =>
+    (
+      await testPrisma.order.findMany({ orderBy: { id: 'asc' }, select: { publicToken: true } })
+    ).map((order) => order.publicToken)
+
+  it('nejdou odvodit z pořadí objednávky', async () => {
+    // Token je jediné, co chrání /rezervace/<token>; odvoditelný token by dovolil
+    // přečíst osobní údaje z cizí objednávky pouhým hádáním pořadí.
+    await seed(testPrisma, 'prvniHeslo123')
+
+    const seeded = await tokens()
+
+    expect(seeded).toHaveLength(3)
+    for (const token of seeded) {
+      expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/)
+    }
+  })
+
+  it('vyjdou při každém běhu jinak', async () => {
+    // Tohle je ten skutečný regresní test: vzorec odvozený z indexu dá pokaždé
+    // tytéž tři řetězce, takže by projít nemohl.
+    await seed(testPrisma, 'prvniHeslo123')
+    const first = await tokens()
+
+    await resetDatabase()
+    await seed(testPrisma, 'prvniHeslo123')
+    const second = await tokens()
+
+    expect(second.some((token) => first.includes(token))).toBe(false)
+  })
+
+  it('kódy objednávek zůstávají odvozené z id', async () => {
+    // Náhodný token se nesmí dotknout pravidla pro kód objednávky.
+    await seed(testPrisma, 'prvniHeslo123')
+
+    const codes = (
+      await testPrisma.order.findMany({ orderBy: { id: 'asc' }, select: { code: true } })
+    ).map((order) => order.code)
+
+    expect(codes).toEqual(['#2610', '#2611', '#2612'])
+  })
+})

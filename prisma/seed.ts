@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { PrismaClient, Prisma } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 // Relativní cesta schválně: seed se spouští mimo Next.js, kde alias `@` nemusí
@@ -291,7 +292,10 @@ export async function seed(prisma: PrismaClient, farmerPassword: string): Promis
       const created = await prisma.order.create({
         data: {
           code: `seed-tmp-${index}`,
-          publicToken: `seed-token-${index + 1}-${Math.abs(index * 7919 + 13)}`,
+          // Token je jediné, co chrání /rezervace/<token>. Odvoditelný token by dovolil
+          // přečíst osobní údaje z cizí objednávky hádáním pořadí, tak ho i demo data
+          // berou stejně náhodný jako aplikace (src/infrastructure/di/container.ts).
+          publicToken: randomBytes(24).toString('base64url'),
           customerName: order.customerName,
           customerEmail: order.customerEmail,
           customerPhone: order.customerPhone,
