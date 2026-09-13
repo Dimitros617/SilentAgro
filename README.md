@@ -276,10 +276,14 @@ burze, která je ze stránky dočasně sundaná. Zapnou se spolu s ní.
   je dvojice IP + účet, ne samotná IP: s jedním společným klíčem by pět špatných hesel
   zamklo celou farmu. Limity se nastavují přes `RATE_LIMIT_*`, výchozí je 5 přihlášení
   za 15 minut, 3 registrace a 10 objednávek za hodinu.
-- Hlavičky na každé odpovědi (`next.config.ts`): CSP, `X-Frame-Options: DENY`, `nosniff`,
-  `Referrer-Policy`, `Permissions-Policy` a HSTS. CSP je uzavřená na vlastní původ, takže
-  externí skript, font nebo `fetch` na cizí doménu prohlížeč tiše zablokuje — počítejte
-  s tím, než něco takového přidáte.
+- Hlavičky na každé odpovědi: `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`,
+  `Permissions-Policy` a HSTS z `next.config.ts`; CSP zvlášť z middleware
+  (`src/shared/csp.ts`), protože nese nonce generovanou na každý požadavek. Díky ní
+  `script-src` nepouští `'unsafe-inline'`: skript se spustí jen s nonce té konkrétní
+  odpovědi, takže vložený `<script>` prohlížeč zahodí. CSP je jinak uzavřená na vlastní
+  původ, takže externí skript, font nebo `fetch` na cizí doménu tiše zablokuje —
+  počítejte s tím, než něco takového přidáte. `style-src` inline styly pouští dál:
+  aplikace jich má stovky v `style={{…}}` a na atribut `style` nonce neplatí.
 
 ## Docker
 

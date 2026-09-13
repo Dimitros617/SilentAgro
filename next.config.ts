@@ -1,28 +1,14 @@
 import type { NextConfig } from 'next'
 
 /**
- * `'unsafe-inline'` ve `script-src` je ústupek: App Router vkládá do stránky inline
- * bootstrap skript a nonce by vyžadovala middleware na každém požadavku, včetně
- * statických stránek. `data:` v `img-src` je nutné pro QR kód, který se na stránku
- * potvrzení vykresluje jako data URI.
+ * CSP tady schválně není. Nese nonce, která musí vzniknout na každý požadavek zvlášť,
+ * takže ji staví middleware (`src/middleware.ts` nad `src/shared/csp.ts`). Statická
+ * politika by kvůli bootstrap skriptu App Routeru musela pouštět `'unsafe-inline'`,
+ * což je ve `script-src` přesně to, čemu má CSP bránit.
  *
- * Ve vývoji Next používá `eval` pro hot-reload, takže tam se `'unsafe-eval'` přidává —
- * v produkčním sestavení ne.
+ * Ostatní hlavičky zůstávají tady: nezávisí na požadavku a takhle sedí i na statických
+ * souborech z `_next`, které middleware schválně míjí.
  */
-const isDev = process.env.NODE_ENV === 'development'
-
-const csp = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com data:",
-  "img-src 'self' data: blob:",
-  "connect-src 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "object-src 'none'",
-].join('; ')
 
 const config: NextConfig = {
   // Runtime image pak obsahuje jen server a nezbytné moduly, ne celé node_modules.
@@ -35,7 +21,6 @@ const config: NextConfig = {
       {
         source: '/:path*',
         headers: [
-          { key: 'Content-Security-Policy', value: csp },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
