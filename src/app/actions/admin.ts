@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import type { AdminVarietyView, NewsView, OrderRowView } from '@/application/dto'
+import type { AdminVarietyView, NewsView, OrderRowView, UserRowView } from '@/application/dto'
 import {
   AdvanceOrderStatus,
   DeactivateVariety,
@@ -19,13 +19,11 @@ import {
   SendMessageToUser,
   SetUserActive,
 } from '@/application/use-cases/users'
-import type { UserRowView } from '@/application/dto'
 import { NewsTag, OrderStatus } from '@/domain/enums'
 import { ValidationError } from '@/domain/errors'
-import { requireFarmer } from '@/infrastructure/auth/session'
 import { getContainer } from '@/infrastructure/di/container'
-import { type Result, ok } from '@/shared/result'
-import { toResultError } from './errors'
+import type { Result } from '@/shared/result'
+import { asFarmer } from './guards'
 
 const idSchema = z.number().int().positive()
 
@@ -61,37 +59,42 @@ const parse = <T>(schema: z.ZodType<T>, input: unknown): T => {
   return parsed.data
 }
 
+const revalidateAdmin = (): void => revalidatePath('/admin', 'layout')
+
+// Sklad se změnil, takže stránky, které ho ukazují, musí přestat platit.
 const revalidateCatalog = (): void => {
   revalidatePath('/')
   revalidatePath('/burza')
   revalidatePath('/sklad')
-  revalidatePath('/admin', 'layout')
+  revalidateAdmin()
 }
+
+const revalidateNews = (): void => {
+  revalidatePath('/')
+  revalidatePath('/admin/novinky')
+}
+
+const revalidateUsers = (): void => revalidatePath('/admin/uzivatele', 'layout')
 
 export async function advanceOrderStatusAction(
   orderId: unknown,
   expectedStatus: unknown,
 ): Promise<Result<OrderRowView, string>> {
-  try {
-    // Kontrola role i tady, ne jen v middleware: server action se dá zavolat přímo.
-    await requireFarmer()
+  return asFarmer(async () => {
     const row = await new AdvanceOrderStatus({ uow: getContainer().uow }).execute(
       parse(idSchema, orderId),
       parse(z.enum(OrderStatus), expectedStatus),
     )
-    revalidatePath('/admin', 'layout')
-    return ok(row)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateAdmin()
+    return row
+  })
 }
 
 export async function setOrderPaidAction(
   orderId: unknown,
   paid: unknown,
 ): Promise<Result<SetOrderPaidResult, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const container = getContainer()
 
     const result = await new SetOrderPaid({
@@ -99,42 +102,33 @@ export async function setOrderPaidAction(
       clock: container.clock,
     }).execute(parse(idSchema, orderId), parse(z.boolean(), paid))
 
-    revalidatePath('/admin', 'layout')
-    return ok(result)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateAdmin()
+    return result
+  })
 }
 
 export async function upsertVarietyAction(
   input: unknown,
 ): Promise<Result<AdminVarietyView, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const view = await new UpsertVariety({ uow: getContainer().uow }).execute(
       parse(varietySchema, input),
     )
     revalidateCatalog()
-    return ok(view)
-  } catch (error) {
-    return toResultError(error)
-  }
+    return view
+  })
 }
 
 export async function deactivateVarietyAction(id: unknown): Promise<Result<null, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     await new DeactivateVariety({ uow: getContainer().uow }).execute(parse(idSchema, id))
     revalidateCatalog()
-    return ok(null)
-  } catch (error) {
-    return toResultError(error)
-  }
+    return null
+  })
 }
 
 export async function publishNewsAction(input: unknown): Promise<Result<NewsView, string>> {
-  try {
-    const session = await requireFarmer()
+  return asFarmer(async (session) => {
     const container = getContainer()
 
     const view = await new PublishNews({ uow: container.uow, clock: container.clock }).execute({
@@ -142,32 +136,24 @@ export async function publishNewsAction(input: unknown): Promise<Result<NewsView
       authorId: session.userId,
     })
 
-    revalidatePath('/')
-    revalidatePath('/admin/novinky')
-    return ok(view)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateNews()
+    return view
+  })
 }
 
 export async function deleteNewsAction(id: unknown): Promise<Result<null, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     await new DeleteNews({ uow: getContainer().uow }).execute(parse(idSchema, id))
-    revalidatePath('/')
-    revalidatePath('/admin/novinky')
-    return ok(null)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateNews()
+    return null
+  })
 }
 
 export async function cancelOrderAction(
   orderId: unknown,
   reason: unknown,
 ): Promise<Result<OrderRowView, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const container = getContainer()
 
     const row = await new CancelOrder({
@@ -176,17 +162,13 @@ export async function cancelOrderAction(
       composer: container.orderMailComposer,
     }).execute(parse(idSchema, orderId), parse(z.string().max(1000), reason))
 
-    // Sklad se změnil, takže stránky, které ho ukazují, musí přestat platit.
     revalidateCatalog()
-    return ok(row)
-  } catch (error) {
-    return toResultError(error)
-  }
+    return row
+  })
 }
 
 export async function markUserVerifiedAction(userId: unknown): Promise<Result<UserRowView, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const container = getContainer()
 
     const row = await new MarkUserVerified({
@@ -194,19 +176,16 @@ export async function markUserVerifiedAction(userId: unknown): Promise<Result<Us
       clock: container.clock,
     }).execute(parse(idSchema, userId))
 
-    revalidatePath('/admin/uzivatele', 'layout')
-    return ok(row)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateUsers()
+    return row
+  })
 }
 
 export async function setUserActiveAction(
   userId: unknown,
   active: unknown,
 ): Promise<Result<UserRowView, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const container = getContainer()
 
     const row = await new SetUserActive({
@@ -214,11 +193,9 @@ export async function setUserActiveAction(
       clock: container.clock,
     }).execute(parse(idSchema, userId), parse(z.boolean(), active))
 
-    revalidatePath('/admin/uzivatele', 'layout')
-    return ok(row)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateUsers()
+    return row
+  })
 }
 
 export async function sendUserMessageAction(
@@ -226,8 +203,7 @@ export async function sendUserMessageAction(
   subject: unknown,
   body: unknown,
 ): Promise<Result<null, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const container = getContainer()
 
     await new SendMessageToUser({
@@ -239,15 +215,12 @@ export async function sendUserMessageAction(
       parse(z.string().max(8000), body),
     )
 
-    return ok(null)
-  } catch (error) {
-    return toResultError(error)
-  }
+    return null
+  })
 }
 
 export async function resendVerificationAction(userId: unknown): Promise<Result<null, string>> {
-  try {
-    await requireFarmer()
+  return asFarmer(async () => {
     const container = getContainer()
 
     await new ResendVerification({
@@ -258,9 +231,7 @@ export async function resendVerificationAction(userId: unknown): Promise<Result<
       config: { publicBaseUrl: container.config.publicBaseUrl },
     }).execute(parse(idSchema, userId))
 
-    revalidatePath('/admin/uzivatele', 'layout')
-    return ok(null)
-  } catch (error) {
-    return toResultError(error)
-  }
+    revalidateUsers()
+    return null
+  })
 }

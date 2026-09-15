@@ -7,8 +7,8 @@ import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
 import { RateLimitError, ValidationError } from '@/domain/errors'
 import { rateLimitKey, readSession } from '@/infrastructure/auth/session'
 import { getContainer } from '@/infrastructure/di/container'
-import { type Result, ok } from '@/shared/result'
-import { toResultError } from './errors'
+import type { Result } from '@/shared/result'
+import { asResult } from './guards'
 
 /**
  * Vstup z klienta se ověřuje na hranici. Server přebírá jen `varietyId` a `quantityKg`;
@@ -41,7 +41,7 @@ export async function reserveOrderAction(
 ): Promise<Result<{ token: string }, string>> {
   const container = getContainer()
 
-  try {
+  return asResult(async () => {
     const parsed = payloadSchema.safeParse(payload)
     if (!parsed.success) {
       throw new ValidationError(
@@ -80,8 +80,6 @@ export async function reserveOrderAction(
     revalidatePath('/sklad')
     revalidatePath('/admin/objednavky')
 
-    return ok({ token: result.publicToken })
-  } catch (error) {
-    return toResultError(error)
-  }
+    return { token: result.publicToken }
+  })
 }

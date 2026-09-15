@@ -6,13 +6,14 @@ import { LoginUser, RegisterUser } from '@/application/use-cases/auth'
 import { RateLimitError } from '@/domain/errors'
 import { clearSession, rateLimitKey, writeSession } from '@/infrastructure/auth/session'
 import { getContainer } from '@/infrastructure/di/container'
-import { type Result, ok } from '@/shared/result'
-import { toResultError } from './errors'
+import type { Result } from '@/shared/result'
+import { asResult } from './guards'
 
-async function completeLogin(user: AuthResult): Promise<Result<AuthResult, string>> {
+/** Vydá session a zneplatní vykreslené stránky, které se liší podle přihlášení. */
+async function completeLogin(user: AuthResult): Promise<AuthResult> {
   await writeSession({ userId: user.userId, role: user.role, name: user.name })
   revalidatePath('/', 'layout')
-  return ok(user)
+  return user
 }
 
 export async function loginAction(
@@ -20,10 +21,9 @@ export async function loginAction(
   formData: FormData,
 ): Promise<Result<AuthResult, string>> {
   const container = getContainer()
-
   const email = String(formData.get('email') ?? '')
 
-  try {
+  return asResult(async () => {
     if (!container.limiters.login.tryConsume(await rateLimitKey(email))) {
       throw new RateLimitError('Příliš mnoho pokusů o přihlášení. Zkuste to prosím za chvíli.')
     }
@@ -36,10 +36,8 @@ export async function loginAction(
       password: String(formData.get('password') ?? ''),
     })
 
-    return await completeLogin(result)
-  } catch (error) {
-    return toResultError(error)
-  }
+    return completeLogin(result)
+  })
 }
 
 export async function registerAction(
@@ -47,10 +45,9 @@ export async function registerAction(
   formData: FormData,
 ): Promise<Result<AuthResult, string>> {
   const container = getContainer()
-
   const email = String(formData.get('email') ?? '')
 
-  try {
+  return asResult(async () => {
     if (!container.limiters.register.tryConsume(await rateLimitKey(email))) {
       throw new RateLimitError('Příliš mnoho registrací. Zkuste to prosím za chvíli.')
     }
@@ -69,10 +66,8 @@ export async function registerAction(
       password: String(formData.get('password') ?? ''),
     })
 
-    return await completeLogin(result)
-  } catch (error) {
-    return toResultError(error)
-  }
+    return completeLogin(result)
+  })
 }
 
 export async function logoutAction(): Promise<void> {

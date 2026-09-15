@@ -15,7 +15,11 @@ const config = [
       'reports/**',
       '.scannerwork/**',
       '.stryker-tmp/**',
-      'tests/scanners/**',
+      // Jen stromy záměrně vadného kódu, na kterém se ověřují scannery — mají
+      // implicitní any a antivzory schválně. `architecture.test.mjs` vedle nich
+      // je běžný kód, který gatuje CI, a lintovat se má.
+      'tests/scanners/architecture/**',
+      'tests/scanners/semgrep/**',
       'playwright-report/**',
       'test-results/**',
       'next-env.d.ts',
