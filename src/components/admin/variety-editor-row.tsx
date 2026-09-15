@@ -142,8 +142,7 @@ export function VarietyRow({ initial }: Readonly<{ initial: AdminVarietyView }>)
           </button>
           <button
             type="button"
-            className="btn btn--ghost"
-            style={{ color: 'var(--clay)', borderColor: '#e8d4cd' }}
+            className="btn btn--ghost btn--ghost-danger"
             onClick={() => void remove()}
             disabled={pending}
           >

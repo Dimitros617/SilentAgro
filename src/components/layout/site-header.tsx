@@ -88,8 +88,7 @@ export function SiteHeader({ farm, session }: Readonly<{ farm: HeaderFarm; sessi
         <Link href="/kosik" className="btn btn--secondary">
           Košík
           <span
-            className="badge badge--green"
-            style={{ background: 'var(--green)', color: '#fff', minWidth: 22, textAlign: 'center' }}
+            className="badge badge--count"
           >
             {count}
           </span>

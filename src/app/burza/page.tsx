@@ -27,7 +27,7 @@ export default async function ShopPage() {
 
       {varieties.length === 0 ? (
         <div className="card card--dashed">
-          <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Zatím tu nic není</p>
+          <p className="empty-title">Zatím tu nic není</p>
           <p className="muted" style={{ marginTop: 8 }}>
             Farmář ještě nic nevykopal. Zkuste to za pár dní.
           </p>

@@ -28,11 +28,11 @@ export default async function VerifyPage({ params }: Readonly<{ params: Promise<
     <div className="shell section" style={{ maxWidth: 640 }}>
       {verified ? (
         <>
-          <div className="alert alert--success" style={{ padding: 30, borderRadius: 'var(--radius-xl)' }}>
+          <div className="alert alert--success alert--panel">
             <h1 className="display" style={{ fontSize: 30 }}>
               E-mail potvrzen
             </h1>
-            <p style={{ color: '#2f4a3a', margin: '10px 0 0', lineHeight: 1.6 }}>
+            <p className="alert__text">
               Děkujeme, {verified.name}. Adresu <strong>{verified.email}</strong> máme ověřenou.
             </p>
           </div>

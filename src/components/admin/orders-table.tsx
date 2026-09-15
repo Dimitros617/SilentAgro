@@ -99,7 +99,7 @@ function OrderRow({
         <span className="orders-row__code">{row.code}</span>
         {row.isCancelled ? (
           <div>
-            <span className="badge" style={{ background: 'var(--tint-clay)', color: 'var(--clay)' }}>
+            <span className="badge badge--clay">
               Zrušeno
             </span>
           </div>
@@ -196,7 +196,7 @@ export function OrdersTable({ orders }: Readonly<{ orders: OrderRowView[] }>) {
   if (orders.length === 0) {
     return (
       <div className="card card--dashed">
-        <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Zatím žádné objednávky</p>
+        <p className="empty-title">Zatím žádné objednávky</p>
       </div>
     )
   }

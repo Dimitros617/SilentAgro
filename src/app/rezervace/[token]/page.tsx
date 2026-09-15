@@ -36,11 +36,11 @@ export default async function ConfirmationPage({
   return (
     <div className="shell section rise" style={{ maxWidth: 1000 }}>
       <CompleteReservation token={token} />
-      <div className={order.isCancelled ? 'alert alert--error' : 'alert alert--success'} style={{ padding: 30, borderRadius: 'var(--radius-xl)' }}>
+      <div className={`alert alert--panel ${order.isCancelled ? 'alert--error' : 'alert--success'}`}>
         <h1 className="display" style={{ fontSize: 32, letterSpacing: '-0.02em' }}>
           Rezervace {order.code} {order.isCancelled ? 'zrušena' : 'přijata'}
         </h1>
-        <p style={{ color: '#2f4a3a', margin: '10px 0 0', lineHeight: 1.6 }}>
+        <p className="alert__text">
           {order.isCancelled
             ? order.cancellationReason
             : `Odečetli jsme ${order.totalKgLabel} ze skladu. Podrobnosti rezervace najdete níže.`}

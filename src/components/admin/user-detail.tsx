@@ -89,12 +89,7 @@ export function UserDetail({ initial: user }: Readonly<{ initial: UserDetailView
                 <span className="badge badge--gold">Neověřen</span>
               )}
               {user.isActive ? null : (
-                <span
-                  className="badge"
-                  style={{ background: 'var(--tint-clay)', color: 'var(--clay)' }}
-                >
-                  Deaktivován
-                </span>
+                <span className="badge badge--clay">Deaktivován</span>
               )}
               {user.isFarmer ? <span className="badge badge--muted">Farmář</span> : null}
             </div>

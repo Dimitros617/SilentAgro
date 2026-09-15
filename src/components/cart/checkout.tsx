@@ -78,7 +78,7 @@ export function Checkout({
   if (lines.length === 0) {
     return (
       <div className="card card--dashed">
-        <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Košík je zatím prázdný</p>
+        <p className="empty-title">Košík je zatím prázdný</p>
         <p className="muted" style={{ marginTop: 8 }}>
           Vyberte si odrůdu v burze.
         </p>

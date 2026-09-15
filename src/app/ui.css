@@ -283,6 +283,11 @@
   border-color: var(--ink);
 }
 
+.btn--ghost-danger {
+  color: var(--clay);
+  border-color: var(--tint-clay-line);
+}
+
 .btn--danger {
   background: transparent;
   border-color: transparent;
@@ -326,6 +331,13 @@
   border-color: var(--line-soft);
   border-radius: var(--radius-md);
   padding: 16px;
+}
+
+/* Nadpis prázdného stavu — opakuje se v burze, košíku i obou admin tabulkách. */
+.empty-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .card--dashed {
@@ -395,6 +407,18 @@
   border: 1px solid var(--tint-green-line);
 }
 
+/* Hlášení přes celou šířku stránky, ne proužek u formuláře. */
+.alert--panel {
+  padding: 30px;
+  border-radius: var(--radius-xl);
+}
+
+.alert__text {
+  margin: 10px 0 0;
+  color: var(--ink-alert);
+  line-height: 1.6;
+}
+
 /* ---------- štítky, chipy, piluly ---------- */
 
 .badge {
@@ -418,6 +442,19 @@
 .badge--muted {
   background: var(--sand-deep);
   color: var(--muted-strong);
+}
+
+.badge--clay {
+  background: var(--tint-clay);
+  color: var(--clay);
+}
+
+/* Počítadlo v hlavičce: plná barva místo tintu a pevná šířka, ať čísla neposkakují. */
+.badge--count {
+  background: var(--green);
+  color: var(--surface);
+  min-width: 22px;
+  text-align: center;
 }
 
 .chip {
@@ -1176,7 +1213,7 @@
 
 .icon-btn--danger {
   color: var(--clay);
-  border-color: #e8d4cd;
+  border-color: var(--tint-clay-line);
 }
 
 .icon-btn--danger:not(:disabled):hover {

@@ -18,7 +18,7 @@ export function UsersTable({ users }: Readonly<{ users: UserRowView[] }>) {
   if (users.length === 0) {
     return (
       <div className="card card--dashed">
-        <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Žádní uživatelé neodpovídají výběru</p>
+        <p className="empty-title">Žádní uživatelé neodpovídají výběru</p>
         <p className="muted" style={{ marginTop: 8 }}>
           Objednávat jde i bez účtu, takže seznam může chvíli zůstat prázdný.
         </p>
@@ -47,12 +47,7 @@ export function UsersTable({ users }: Readonly<{ users: UserRowView[] }>) {
                 <VerifiedBadge user={user} />
                 {user.isFarmer ? <span className="badge badge--muted">Farmář</span> : null}
                 {user.isActive ? null : (
-                  <span
-                    className="badge"
-                    style={{ background: 'var(--tint-clay)', color: 'var(--clay)' }}
-                  >
-                    Deaktivován
-                  </span>
+                  <span className="badge badge--clay">Deaktivován</span>
                 )}
               </div>
 
