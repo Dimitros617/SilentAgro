@@ -36,7 +36,7 @@ export class CancelOrder {
 
     const cancelled = await this.deps.uow.runInTransaction(async (repos) => {
       const order = await repos.orders.lockForUpdate(orderId)
-      if (!order) throw new NotFoundError('Objednávka')
+      if (!order) throw new NotFoundError('Objednávka nenalezena')
       if (order.isCancelled) throw new ConflictError('Objednávka už je zrušená')
 
       // Zámek na odrůdy ze stejného důvodu jako u rezervace: souběžná objednávka
@@ -48,7 +48,7 @@ export class CancelOrder {
       for (const item of order.items) {
         const variety = byId.get(item.varietyId)
         // Chybějící vazba je poškození dat. Transakce nesmí potichu ztratit sklad.
-        if (!variety) throw new NotFoundError('Odrůda objednávky')
+        if (!variety) throw new NotFoundError('Odrůda objednávky nenalezena')
         byId.set(item.varietyId, variety.restock(item.quantity))
       }
 

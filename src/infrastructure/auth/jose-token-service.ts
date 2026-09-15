@@ -1,9 +1,9 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { UserRole } from '@/domain/enums'
 import type { SessionPayload, TokenService, VerifiedSession } from '@/domain/ports/services'
+import { SESSION_MAX_AGE_SECONDS } from '@/infrastructure/auth/session-cookie'
 
 const ALGORITHM = 'HS256'
-const DEFAULT_TTL_SECONDS = 7 * 24 * 3600
 
 const isKnownRole = (value: unknown): value is UserRole =>
   value === UserRole.CUSTOMER || value === UserRole.FARMER
@@ -18,7 +18,7 @@ export class JoseTokenService implements TokenService {
 
   constructor(
     secret: string,
-    private readonly ttlSeconds: number = DEFAULT_TTL_SECONDS,
+    private readonly ttlSeconds: number = SESSION_MAX_AGE_SECONDS,
   ) {
     this.key = new TextEncoder().encode(secret)
   }

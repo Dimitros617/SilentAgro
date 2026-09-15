@@ -16,7 +16,7 @@ try {
     '--timeout', '15m',
     '--scanners', 'vuln,misconfig', '--format', 'json',
     '--exit-code', '1', '--severity', 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL',
-    '--skip-dirs', '/project/node_modules,/project/.next,/project/.git,/project/dist,/project/coverage,/project/reports,/project/public/uploads',
+    '--skip-dirs', '/project/node_modules,/project/.next,/project/.git,/project/dist,/project/coverage,/project/reports,/project/.stryker-tmp,/project/public/uploads',
     '--skip-files', '/project/.env,/project/.env.*',
     '/project',
   ], { cwd: root, stdio: ['ignore', report, 'inherit'] })

@@ -131,7 +131,7 @@ export class PrismaOrderRepository implements TransactionOrderRepository {
 
   async updateStatus(id: number, status: OrderStatus): Promise<Order> {
     const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
-    if (!existing) throw new NotFoundError('Objednávka')
+    if (!existing) throw new NotFoundError('Objednávka nenalezena')
 
     const row = await this.db.order.update({
       where: { id },
@@ -153,7 +153,7 @@ export class PrismaOrderRepository implements TransactionOrderRepository {
 
     if (changed.count === 0) {
       const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
-      if (!existing) throw new NotFoundError('Objednávka')
+      if (!existing) throw new NotFoundError('Objednávka nenalezena')
       throw new ConflictError('Objednávka už je zrušená')
     }
 
@@ -189,7 +189,7 @@ export class PrismaOrderRepository implements TransactionOrderRepository {
 
   async setPaid(id: number, paidAt: Date | null): Promise<Order> {
     const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
-    if (!existing) throw new NotFoundError('Objednávka')
+    if (!existing) throw new NotFoundError('Objednávka nenalezena')
 
     const row = await this.db.order.update({
       where: { id },

@@ -56,7 +56,7 @@ export class GetUserDetail {
     const { users, orders } = this.deps.uow.repos
 
     const user = await users.findById(userId)
-    if (!user) throw new NotFoundError('Uživatel')
+    if (!user) throw new NotFoundError('Uživatel nenalezen')
 
     const filter = { query: '', userId }
     const total = await orders.countFiltered(filter)
@@ -81,16 +81,16 @@ export class VerifyEmail {
   constructor(private readonly deps: { uow: UnitOfWork; clock: Clock }) {}
 
   async execute(token: string): Promise<{ name: string; email: string }> {
-    if (token.trim().length === 0) throw new NotFoundError('Ověřovací odkaz')
+    if (token.trim().length === 0) throw new NotFoundError('Ověřovací odkaz nenalezen')
 
     return this.deps.uow.runInTransaction(async (repos) => {
       const user = await repos.users.lockByVerificationToken(token)
-      if (!user) throw new NotFoundError('Ověřovací odkaz')
+      if (!user) throw new NotFoundError('Ověřovací odkaz nenalezen')
 
       // Prošlý odkaz se chová jako neexistující — hláška je stejná, aby z ní
       // nešlo poznat, jestli token někdy platil.
       const now = this.deps.clock.now()
-      if (!user.canVerifyAt(now)) throw new NotFoundError('Ověřovací odkaz')
+      if (!user.canVerifyAt(now)) throw new NotFoundError('Ověřovací odkaz nenalezen')
 
       const verified = await repos.users.save(user.withVerified(now))
       await claimGuestOrders(repos, verified)
@@ -106,7 +106,7 @@ export class MarkUserVerified {
   async execute(userId: number): Promise<UserRowView> {
     return this.deps.uow.runInTransaction(async (repos) => {
       const user = await repos.users.lockForUpdate(userId)
-      if (!user) throw new NotFoundError('Uživatel')
+      if (!user) throw new NotFoundError('Uživatel nenalezen')
       if (user.isVerified) throw new ConflictError('Účet už je ověřený')
 
       const verified = await repos.users.save(user.withVerified(this.deps.clock.now()))
@@ -123,7 +123,7 @@ export class SetUserActive {
   async execute(userId: number, active: boolean): Promise<UserRowView> {
     return this.deps.uow.runInTransaction(async (repos) => {
       const user = await repos.users.lockForUpdate(userId)
-      if (!user) throw new NotFoundError('Uživatel')
+      if (!user) throw new NotFoundError('Uživatel nenalezen')
 
       // Farmář si nesmí zamknout vlastní přístup do administrace.
       if (!active && user.role === UserRole.FARMER) {
@@ -148,7 +148,7 @@ export class SendMessageToUser {
     if (trimmedBody.length === 0) throw new ValidationError('Napište text zprávy')
 
     const user = await this.deps.uow.repos.users.findById(userId)
-    if (!user) throw new NotFoundError('Uživatel')
+    if (!user) throw new NotFoundError('Uživatel nenalezen')
 
     // Tady se výjimka **nepolyká**: farmář musí vědět, že se zpráva neodeslala.
     // U potvrzení objednávky je to naopak — tam je pravdou sklad, ne e-mail.
@@ -171,7 +171,7 @@ export class ResendVerification {
   async execute(userId: number): Promise<void> {
     const user = await this.deps.uow.runInTransaction(async (repos) => {
       const found = await repos.users.lockForUpdate(userId)
-      if (!found) throw new NotFoundError('Uživatel')
+      if (!found) throw new NotFoundError('Uživatel nenalezen')
       if (found.isVerified) throw new ConflictError('Účet už je ověřený')
 
       const token = this.deps.tokenGenerator.publicToken()

@@ -32,7 +32,7 @@ export class AdvanceOrderStatus {
     // Zámek serializuje zápisy; očekávaný stav odmítne druhý klik ze staršího zobrazení.
     return this.deps.uow.runInTransaction(async (repos) => {
       const order = await repos.orders.lockForUpdate(orderId)
-      if (!order) throw new NotFoundError('Objednávka')
+      if (!order) throw new NotFoundError('Objednávka nenalezena')
       if (order.isCancelled) throw new ConflictError('Zrušená objednávka se už neposouvá')
       if (order.status !== expectedStatus) {
         throw new ConflictError('Stav objednávky se mezitím změnil. Obnovte přehled.')
@@ -55,7 +55,7 @@ export class SetOrderPaid {
   async execute(orderId: number, paid: boolean): Promise<SetOrderPaidResult> {
     return this.deps.uow.runInTransaction(async (repos) => {
       const order = await repos.orders.lockForUpdate(orderId)
-      if (!order) throw new NotFoundError('Objednávka')
+      if (!order) throw new NotFoundError('Objednávka nenalezena')
       if (order.isCancelled) throw new ConflictError('Zrušená objednávka se už neoznačuje')
 
       // Idempotence: už zaplacenou objednávku neoznačujeme znovu. Jinak by dvojklik

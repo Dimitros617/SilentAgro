@@ -28,12 +28,13 @@ export class InsufficientStockError extends DomainError {
   }
 }
 
+/**
+ * Hláška se předává celá, ne jen podstatné jméno: koncovka „nenalezen“ se v češtině
+ * řídí rodem (`Uživatel nenalezen`, ale `Objednávka nenalezena`) a šablona ji uhodnout
+ * neumí. Text jde přímo uživateli, tak ať je správně.
+ */
 export class NotFoundError extends DomainError {
   readonly code = 'NOT_FOUND'
-
-  constructor(what: string) {
-    super(`${what} nenalezena`)
-  }
 }
 
 export class AuthError extends DomainError {

@@ -19,8 +19,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
-      - run: npm run quality:architecture:test
+      # Každá kontrola musí doběhnout i po pádu té předchozí — jinak se neuloží
+      # reporty, kvůli kterým se workflow spouští.
+      - name: Testy architektonických pravidel
+        if: ${{ !cancelled() }}
+        run: npm run quality:architecture:test
       - name: Kvalita zdrojového kódu
+        if: ${{ !cancelled() }}
         run: npm run quality:scan
       - name: Závislosti a konfigurace
         if: ${{ !cancelled() }}

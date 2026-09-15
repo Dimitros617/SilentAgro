@@ -9,7 +9,16 @@ import type { Kilograms } from '@/domain/value-objects/kilograms'
  * nemají, převod na koruny je jediné dělení a proběhne až při čtení.
  */
 export class Money {
-  private constructor(private readonly hellers: number) {}
+  private readonly hellers: number
+
+  /**
+   * Jediné hrdlo pro všechny továrny i aritmetiku. Zápornou nulu normalizuje tady:
+   * `-0 < 0` je `false` a `Math.round(-0 * 100)` je zase `-0`, takže obě stráže
+   * v `fromCzk` i `fromHellers` ji propustí až k formátování jako „-0 Kč“.
+   */
+  private constructor(hellers: number) {
+    this.hellers = Object.is(hellers, -0) ? 0 : hellers
+  }
 
   static fromCzk(czk: number): Money {
     if (!Number.isFinite(czk)) {

@@ -4,11 +4,9 @@ import type { AuthResult } from '@/application/dto'
 import { AuthorizeFarmerSession, AuthorizeSession } from '@/application/use-cases/auth'
 import { ForbiddenError } from '@/domain/errors'
 import type { SessionPayload, VerifiedSession } from '@/domain/ports/services'
-import { SESSION_COOKIE } from '@/infrastructure/auth/session-cookie'
+import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '@/infrastructure/auth/session-cookie'
 import { getEnv } from '@/infrastructure/config/env'
 import { getContainer } from '@/infrastructure/di/container'
-
-const SESSION_MAX_AGE_SECONDS = 7 * 24 * 3600
 
 async function readVerifiedSession(): Promise<VerifiedSession | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value

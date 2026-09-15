@@ -2,7 +2,16 @@ rules:
   - id: unsafe-prisma-query
     languages: [typescript, javascript]
     severity: ERROR
-    message: Použijte parametrizovaný Prisma SQL template; Unsafe API zde není povolené.
+    message: >-
+      Použijte parametrizovaný Prisma SQL template (Prisma.sql / $queryRaw).
+      Unsafe API ani Prisma.raw zde nejsou povolené — obojí vkládá text do dotazu bez escapování.
     pattern-either:
       - pattern: $DB.$queryRawUnsafe(...)
       - pattern: $DB.$executeRawUnsafe(...)
+      # Bez tečky: zachytí i volání po destrukturalizaci (`const { $queryRawUnsafe } = db`).
+      # Názvy začínají malým písmenem, takže je Semgrep bere jako literály, ne metaproměnné.
+      - pattern: $queryRawUnsafe(...)
+      - pattern: $executeRawUnsafe(...)
+      # Prisma.raw staví neescapovaný fragment. Prisma.sql a Prisma.join jsou naopak
+      # parametrizované a musí zůstat povolené — proto se cílí právě na `raw`.
+      - pattern: Prisma.raw(...)

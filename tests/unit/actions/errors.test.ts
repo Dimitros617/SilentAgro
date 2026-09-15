@@ -24,7 +24,7 @@ describe('toResultError', () => {
   })
 
   it('zachová kód chyby, aby na něj UI mohlo reagovat', () => {
-    expect(toResultError(new NotFoundError('Rezervace')).code).toBe('NOT_FOUND')
+    expect(toResultError(new NotFoundError('Rezervace nenalezena')).code).toBe('NOT_FOUND')
     expect(toResultError(new ForbiddenError()).code).toBe('FORBIDDEN')
     expect(toResultError(new AuthError('Nesprávný e-mail nebo heslo')).code).toBe('AUTH')
   })

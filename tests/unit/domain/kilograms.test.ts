@@ -68,6 +68,13 @@ describe('Kilograms.parse', () => {
     expect(formatKg(Kilograms.parse(-0))).toBe('0 kg')
   })
 
+  it('zápornou nulu normalizuje i v ostatních továrnách, ne jen v parse', () => {
+    // -0 projde každou kontrolou `< 0`, takže `of` ho dřív propustilo až k Intl.
+    expect(Object.is(Kilograms.of(-0).value, 0)).toBe(true)
+    expect(formatKg(Kilograms.of(-0))).toBe('0 kg')
+    expect(formatKg(Kilograms.zero().plus(Kilograms.of(-0)))).toBe('0 kg')
+  })
+
   it.each([null, undefined])('prázdnou formulářovou hodnotu %s převede na nulu', (value) => {
     expect(Kilograms.parse(value).value).toBe(0)
   })

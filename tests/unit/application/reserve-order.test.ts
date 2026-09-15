@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { ReserveOrder, type ReserveOrderInput } from '@/application/use-cases/reserve-order'
 import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
-import { ConflictError, InsufficientStockError, ValidationError } from '@/domain/errors'
+import { ConflictError, InsufficientStockError, NotFoundError, ValidationError } from '@/domain/errors'
+import { expectDomainError } from '../helpers/domain-error'
 import {
   FakeMailer,
   RecordingLogger,
@@ -66,7 +67,7 @@ describe('ReserveOrder — identita opakovaného pokusu', () => {
 
   it.each(['', 'neplatný-klíč', `x${requestKey}`, `${requestKey}x`])('odmítne neplatný klíč %s před zápisem', async (key) => {
     const ctx = setup()
-    await expect(ctx.useCase.execute(reservationInput({ requestKey: key }))).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(reservationInput({ requestKey: key })), ValidationError, {
       code: 'VALIDATION',
       message: 'Chybí platný identifikátor pokusu o rezervaci',
     })
@@ -102,7 +103,7 @@ describe('ReserveOrder — identita opakovaného pokusu', () => {
     await ctx.useCase.execute(input)
     ctx.orders.items.clear()
 
-    await expect(ctx.useCase.execute(input)).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(input), NotFoundError, {
       code: 'NOT_FOUND',
       message: 'Původní rezervace nenalezena',
     })
@@ -224,7 +225,7 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
 
   it('odmítne prázdný košík', async () => {
     const ctx = setup()
-    await expect(reserve(ctx.useCase, [])).rejects.toMatchObject({
+    await expectDomainError(reserve(ctx.useCase, []), ValidationError, {
       code: 'VALIDATION',
       message: 'Košík je prázdný',
     })

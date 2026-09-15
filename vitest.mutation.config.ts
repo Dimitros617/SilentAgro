@@ -1,12 +1,11 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
+import { unitProject } from './vitest.config'
 
 export default defineConfig({
-  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  resolve: unitProject.resolve,
   test: {
-    // Samostatná konfigurace zaručuje, že mutace nikdy nespustí databázové ani E2E testy.
-    include: ['tests/unit/domain/**/*.test.ts', 'tests/unit/application/**/*.test.ts', 'tests/unit/cart/**/*.test.ts'],
-    environment: 'node',
-    env: { MAIL_DRIVER: 'memory' },
+    // Bez `projects`: mutace tak nikdy nespustí databázové ani E2E testy. Výběr souborů
+    // i prostředí se dědí z jednotkového projektu, aby se nerozešly s tím, co jede v CI.
+    ...unitProject.test,
   },
 })

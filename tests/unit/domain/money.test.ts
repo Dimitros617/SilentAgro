@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ValidationError } from '@/domain/errors'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
+import { formatCzk } from '@/shared/format'
 
 describe('Money', () => {
   it('sčítá bez chyby plovoucí čárky', () => {
@@ -65,6 +66,15 @@ describe('Money', () => {
     let total = Money.zero()
     for (let i = 0; i < 1000; i += 1) total = total.plus(Money.fromCzk(19).timesKg(Kilograms.of(0.5)))
     expect(total.czk).toBe(9500)
+  })
+
+  it('zápornou nulu normalizuje ve všech vstupech', () => {
+    // `Math.round(-0 * 100)` je -0 a `-0 < 0` je false, takže obě stráže -0 propustí.
+    expect(Object.is(Money.fromCzk(-0).haleru, 0)).toBe(true)
+    expect(Object.is(Money.fromHellers(-0).haleru, 0)).toBe(true)
+    expect(formatCzk(Money.fromCzk(-0))).toBe('0 Kč')
+    expect(formatCzk(Money.fromHellers(-0))).toBe('0 Kč')
+    expect(formatCzk(Money.fromCzk(22).timesKg(Kilograms.of(-0)))).toBe('0 Kč')
   })
 
   it('je neměnný', () => {

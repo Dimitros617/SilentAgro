@@ -2,8 +2,16 @@ rules:
   - id: variety-identity
     languages: [typescript, javascript]
     severity: ERROR
-    message: Odrůdu identifikujte pomocí ID. Název slouží k zobrazení a historickému snapshotu.
+    message: >-
+      Odrůdu identifikujte pomocí ID. Název slouží k zobrazení a historickému snapshotu,
+      takže po přejmenování ukazuje jinam nebo nikam.
     pattern-either:
-      - pattern: "$DB.variety.findFirst({where: {name: $NAME, ...}, ...})"
-      - pattern: "$DB.variety.findUnique({where: {name: $NAME, ...}, ...})"
+      # Výčtem místo jednoho pravidla na metodu: `where: { name }` je identita ve čtení
+      # i v zápisu, takže upsert, update i delete patří do stejné sítě jako findUnique.
+      - patterns:
+          - pattern: "$DB.variety.$METHOD({where: {name: $NAME, ...}, ...})"
+          - metavariable-regex:
+              metavariable: $METHOD
+              regex: ^(findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|update|updateMany|upsert|delete|deleteMany|count)$
       - pattern: "{variety: {connect: {name: $NAME, ...}, ...}, ...}"
+      - pattern: "{variety: {connectOrCreate: {where: {name: $NAME, ...}, ...}, ...}, ...}"

@@ -178,7 +178,7 @@ export class InMemoryOrderRepository implements TransactionOrderRepository {
 
   async updateStatus(id: number, status: OrderStatus): Promise<Order> {
     const order = this.items.get(id)
-    if (!order) throw new NotFoundError('Objednávka')
+    if (!order) throw new NotFoundError('Objednávka nenalezena')
     const next = order.withStatus(status)
     this.items.set(id, next)
     return next
@@ -186,7 +186,7 @@ export class InMemoryOrderRepository implements TransactionOrderRepository {
 
   async setPaid(id: number, paidAt: Date | null): Promise<Order> {
     const order = this.items.get(id)
-    if (!order) throw new NotFoundError('Objednávka')
+    if (!order) throw new NotFoundError('Objednávka nenalezena')
     const next = order.withPaidAt(paidAt)
     this.items.set(id, next)
     return next
@@ -194,7 +194,7 @@ export class InMemoryOrderRepository implements TransactionOrderRepository {
 
   async cancel(id: number, cancelledAt: Date, reason: string): Promise<Order> {
     const order = this.items.get(id)
-    if (!order) throw new NotFoundError('Objednávka')
+    if (!order) throw new NotFoundError('Objednávka nenalezena')
     if (order.isCancelled) throw new ConflictError('Objednávka už je zrušená')
     const next = order.withCancellation(cancelledAt, reason)
     this.items.set(id, next)

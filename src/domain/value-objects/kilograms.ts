@@ -15,7 +15,17 @@ const toStep = (value: number): number => Math.round(value * 2) / 2
 export class Kilograms {
   static readonly STEP = STEP
 
-  private constructor(private readonly amount: number) {}
+  private readonly amount: number
+
+  /**
+   * Jediné hrdlo pro všechny továrny. Zápornou nulu normalizuje tady, protože
+   * `-0 < 0` je `false` — projde tedy každou kontrolou znaménka a zastaví se až
+   * v `Intl`, který ji vypíše jako „-0 kg“. Záplata v jedné továrně by ostatní
+   * cesty (`of`, aritmetika) nechala rozbité.
+   */
+  private constructor(amount: number) {
+    this.amount = Object.is(amount, -0) ? 0 : amount
+  }
 
   static of(value: number): Kilograms {
     if (!Number.isFinite(value)) {
@@ -44,7 +54,6 @@ export class Kilograms {
       raw = Number.parseFloat(text.replace(',', '.').replace(/[^0-9.]/g, ''))
     }
 
-    // Normalizujeme i číselné -0, aby se při formátování nezobrazilo „-0 kg“.
     if (!Number.isFinite(raw) || raw <= 0) return new Kilograms(0)
     return new Kilograms(toStep(raw))
   }

@@ -4,6 +4,13 @@ rules:
     severity: ERROR
     message: decodeJwt neověřuje podpis. Pro autentizaci použijte ověřování session přes jwtVerify.
     pattern-either:
+      # Holé volání se hlídá bez ohledu na tvar importu: `decodeJwt` je dost specifický
+      # název a u bezpečnostního pravidla je planý poplach levnější než tichá mezera.
+      # Pokrývá i `import { decodeJwt } from 'jose'`, kde normalizace tvaru s aliasem
+      # závisí na verzi Semgrepu.
+      - pattern: decodeJwt(...)
+      # Namespace i `require('jose').decodeJwt(...)`.
+      - pattern: $JOSE.decodeJwt(...)
       - patterns:
           - pattern-inside: |
               import { decodeJwt as $DECODE } from 'jose';
@@ -11,6 +18,6 @@ rules:
           - pattern: $DECODE(...)
       - patterns:
           - pattern-inside: |
-              import * as $JOSE from 'jose';
+              const { decodeJwt: $DECODE } = require('jose');
               ...
-          - pattern: $JOSE.decodeJwt(...)
+          - pattern: $DECODE(...)

@@ -3,21 +3,28 @@ import { defineConfig } from 'vitest/config'
 
 const src = fileURLToPath(new URL('./src', import.meta.url))
 
+/**
+ * Nastavení jednotkových testů. Sdílí ho i `vitest.mutation.config.ts`, aby mutační běh
+ * nemohl jet proti jinému výběru souborů ani jinému prostředí než CI — jinak by mutanty
+ * zabité testem, který Stryker nevidí, hlásil jako přeživší.
+ */
+export const unitProject = {
+  resolve: { alias: { '@': src } },
+  test: {
+    name: 'unit',
+    include: ['tests/unit/**/*.test.ts'],
+    environment: 'node' as const,
+    env: { MAIL_DRIVER: 'memory' },
+  },
+}
+
 export default defineConfig({
   resolve: {
     alias: { '@': src },
   },
   test: {
     projects: [
-      {
-        resolve: { alias: { '@': src } },
-        test: {
-          name: 'unit',
-          include: ['tests/unit/**/*.test.ts'],
-          environment: 'node',
-          env: { MAIL_DRIVER: 'memory' },
-        },
-      },
+      unitProject,
       {
         resolve: { alias: { '@': src } },
         test: {

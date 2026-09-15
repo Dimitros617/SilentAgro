@@ -63,7 +63,7 @@ export class ReserveOrder {
       const existingId = await repos.reservationRequests.claim(requestKey, content)
       if (existingId !== null) {
         const existing = await repos.orders.findById(existingId)
-        if (!existing) throw new NotFoundError('Původní rezervace')
+        if (!existing) throw new NotFoundError('Původní rezervace nenalezena')
         return existing
       }
       const locked = await repos.varieties.lockForUpdate([...requested.keys()])

@@ -45,7 +45,7 @@ export class UpsertVariety {
     return this.deps.uow.runInTransaction(async (repos) => {
       if (input.id !== null) {
         const [existing] = await repos.varieties.lockForUpdate([input.id])
-        if (!existing) throw new NotFoundError('Odrůda')
+        if (!existing) throw new NotFoundError('Odrůda nenalezena')
         if (input.expectedStockKg === null || existing.stock.value !== input.expectedStockKg) {
           throw new ConflictError('Sklad se mezitím změnil. Obnovte stránku a zadejte úpravu znovu.')
         }
@@ -103,7 +103,7 @@ export class DeactivateVariety {
   async execute(id: number): Promise<void> {
     await this.deps.uow.runInTransaction(async (repos) => {
       const existing = await repos.varieties.findById(id)
-      if (!existing) throw new NotFoundError('Odrůda')
+      if (!existing) throw new NotFoundError('Odrůda nenalezena')
       await repos.varieties.deactivate(id)
     })
   }

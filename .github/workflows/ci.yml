@@ -61,6 +61,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
       - run: npm run quality:semgrep:test
       - run: npm run quality:semgrep
       - uses: actions/upload-artifact@v4

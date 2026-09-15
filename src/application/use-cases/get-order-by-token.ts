@@ -10,7 +10,7 @@ export class GetOrderByToken {
 
   async execute(token: string): Promise<OrderConfirmationView> {
     const order = await this.deps.uow.repos.orders.findByPublicToken(token)
-    if (!order) throw new NotFoundError('Rezervace')
+    if (!order) throw new NotFoundError('Rezervace nenalezena')
 
     // Náhled sdílí aktuální šablony s přípravou pošty. Stav doručení tím neověřujeme.
     const [payment, mails] = await Promise.all([

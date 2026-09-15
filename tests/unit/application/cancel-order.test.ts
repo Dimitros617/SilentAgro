@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CancelOrder } from '@/application/use-cases/cancel-order'
+import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
+import { expectDomainError } from '../helpers/domain-error'
 import { OrderItem } from '@/domain/entities/order'
 import { DeliveryMethod, OrderStatus, PaymentMethod } from '@/domain/enums'
 import { EmailAddress } from '@/domain/value-objects/email-address'
@@ -101,7 +103,7 @@ describe('CancelOrder', () => {
     const ctx = await setup({ stockKg: 10, orderKg: 2.5 })
     await ctx.useCase.execute(1, 'Kroupy zničily úrodu.')
 
-    await expect(ctx.useCase.execute(1, 'Znovu')).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(1, 'Znovu'), ConflictError, {
       code: 'CONFLICT',
       message: 'Objednávka už je zrušená',
     })
@@ -110,7 +112,7 @@ describe('CancelOrder', () => {
 
   it('odmítne prázdný důvod', async () => {
     const ctx = await setup()
-    await expect(ctx.useCase.execute(1, '   ')).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(1, '   '), ValidationError, {
       code: 'VALIDATION',
       message: 'Napište důvod zrušení — zákazník ho dostane e-mailem',
     })
@@ -119,7 +121,7 @@ describe('CancelOrder', () => {
 
   it('odmítne příliš dlouhý důvod', async () => {
     const ctx = await setup()
-    await expect(ctx.useCase.execute(1, 'a'.repeat(1001))).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(1, 'a'.repeat(1001)), ValidationError, {
       code: 'VALIDATION',
       message: 'Důvod zrušení je příliš dlouhý',
     })
@@ -135,7 +137,7 @@ describe('CancelOrder', () => {
 
   it('u neexistující objednávky skončí chybou', async () => {
     const ctx = await setup()
-    await expect(ctx.useCase.execute(999, 'Důvod')).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(999, 'Důvod'), NotFoundError, {
       code: 'NOT_FOUND',
       message: 'Objednávka nenalezena',
     })
@@ -145,7 +147,7 @@ describe('CancelOrder', () => {
     const ctx = await setup()
     ctx.varieties.items.clear()
 
-    await expect(ctx.useCase.execute(1, 'Zákazník si to rozmyslel.')).rejects.toMatchObject({
+    await expectDomainError(ctx.useCase.execute(1, 'Zákazník si to rozmyslel.'), NotFoundError, {
       code: 'NOT_FOUND',
       message: 'Odrůda objednávky nenalezena',
     })
