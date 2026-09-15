@@ -58,6 +58,14 @@ export interface TokenGenerator {
   publicToken(): string
 }
 
+/**
+ * Logování pro vrstvy, které nesmějí sáhnout na konzoli — tedy `application` a níž.
+ *
+ * Vrstva `app` (server actions, error boundary, instrumentace) loguje přímo přes
+ * `console`: je to kompoziční okraj, kde konzole stejně je tou implementací, kterou
+ * kontejner do portu zapojuje. Port existuje kvůli testovatelnosti use-case, ne
+ * proto, aby se přes něj protahoval každý výpis.
+ */
 export interface Logger {
   info(message: string, meta?: Record<string, unknown>): void
   warn(message: string, meta?: Record<string, unknown>): void

@@ -7,6 +7,13 @@ import { Money } from '@/domain/value-objects/money'
 import { formatKg } from '@/shared/format'
 import { variableSymbolFor } from '@/shared/order-code'
 
+/**
+ * Verze pravidel, podle kterých se objednávka ocenila. Historické objednávky si nesou
+ * tu svoji, takže se dá poznat, co ještě spadá pod staré pravidlo — proto se částky
+ * ukládají a při načtení nepřepočítávají. Při změně pravidel ocenění se zvedne.
+ */
+const CURRENT_PRICING_VERSION = 1
+
 export interface OrderItemProps {
   readonly varietyId: number
   readonly varietyName: string
@@ -112,7 +119,7 @@ export class Order {
   /** Sleva se vztahuje na položky a nesmí překročit jejich cenu. */
   static calculateAmounts(subtotal: Money, deliveryFee: Money, discount = Money.zero()): OrderAmounts {
     const total = subtotal.minus(discount).plus(deliveryFee)
-    return { subtotal, deliveryFee, discount, total, pricingVersion: 1 }
+    return { subtotal, deliveryFee, discount, total, pricingVersion: CURRENT_PRICING_VERSION }
   }
 
   /**

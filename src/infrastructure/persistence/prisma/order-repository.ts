@@ -129,9 +129,21 @@ export class PrismaOrderRepository implements TransactionOrderRepository {
     return this.db.order.count({ where: { status, cancelledAt: null } })
   }
 
-  async updateStatus(id: number, status: OrderStatus): Promise<Order> {
+  /**
+   * Existenci ověřuje dotazem předem, a ne odchycením chyby z `update`.
+   *
+   * Prisma při nenalezeném řádku hází vlastní výjimku a `toResultError` ukazuje
+   * uživateli jen hlášky doménových chyb — z Prismy by se tak stalo obecné
+   * „Něco se nepovedlo" místo věty, která říká, co se děje. Nikde jinde v projektu
+   * se kódy chyb Prismy nemapují a tahle předkontrola je důvod proč.
+   */
+  private async requireExisting(id: number): Promise<void> {
     const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
     if (!existing) throw new NotFoundError('Objednávka nenalezena')
+  }
+
+  async updateStatus(id: number, status: OrderStatus): Promise<Order> {
+    await this.requireExisting(id)
 
     const row = await this.db.order.update({
       where: { id },
@@ -152,8 +164,8 @@ export class PrismaOrderRepository implements TransactionOrderRepository {
     })
 
     if (changed.count === 0) {
-      const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
-      if (!existing) throw new NotFoundError('Objednávka nenalezena')
+      // Nula změněných řádků znamená buď neexistující objednávku, nebo už zrušenou.
+      await this.requireExisting(id)
       throw new ConflictError('Objednávka už je zrušená')
     }
 
@@ -188,8 +200,7 @@ export class PrismaOrderRepository implements TransactionOrderRepository {
   }
 
   async setPaid(id: number, paidAt: Date | null): Promise<Order> {
-    const existing = await this.db.order.findUnique({ where: { id }, select: { id: true } })
-    if (!existing) throw new NotFoundError('Objednávka nenalezena')
+    await this.requireExisting(id)
 
     const row = await this.db.order.update({
       where: { id },

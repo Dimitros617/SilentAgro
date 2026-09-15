@@ -20,7 +20,7 @@ function sourcePath(filename) {
   return path.relative(srcRoot, filename).replaceAll('\\', '/')
 }
 
-/** Resolves aliases and relative paths, including type imports and dynamic imports. */
+/** Rozlouskne aliasy i relativní cesty, včetně typových a dynamických importů. */
 const layerDependencies = {
   meta: {
     type: 'problem',
@@ -50,7 +50,7 @@ const layerDependencies = {
       if (resolved) {
         const relative = sourcePath(resolved)
         const targetLayer = relative.split('/')[0]
-        // Server actions are the explicit browser-to-server boundary in Next.js.
+        // Server actions jsou v Next.js výslovná hranice mezi prohlížečem a serverem.
         if (layer === 'components' && relative.startsWith('app/actions/')) return
         // Komponenta přebírá DTO; serverový use-case sestavuje až stránka nebo action.
         if (layer === 'components' && relative.replace(/\.tsx?$/, '') === 'application/dto' && isTypeOnlyImport(node)) return
