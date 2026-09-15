@@ -33,7 +33,8 @@ describe('loadEnv — výchozí hodnoty', () => {
 
 describe('loadEnv — povinné hodnoty', () => {
   it('odmítne chybějící DATABASE_URL a chybu pojmenuje', () => {
-    const { DATABASE_URL: _omit, ...rest } = valid as Record<string, string>
+    const rest = { ...valid }
+    delete rest.DATABASE_URL
     expect(() => loadEnv(rest as NodeJS.ProcessEnv)).toThrow(/DATABASE_URL/)
   })
 
@@ -42,7 +43,8 @@ describe('loadEnv — povinné hodnoty', () => {
   })
 
   it('odmítne chybějící bankovní účet', () => {
-    const { BANK_ACCOUNT_IBAN: _omit, ...rest } = valid as Record<string, string>
+    const rest = { ...valid }
+    delete rest.BANK_ACCOUNT_IBAN
     expect(() => loadEnv(rest as NodeJS.ProcessEnv)).toThrow(/BANK_ACCOUNT_IBAN/)
   })
 })

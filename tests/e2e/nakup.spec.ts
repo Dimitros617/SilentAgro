@@ -1,6 +1,36 @@
 import { expect, test } from '@playwright/test'
 import { addToCart, checkout, paymentValue, readStock } from './helpers'
 
+test('po ztracené odpovědi a obnovení stránky nevytvoří druhou rezervaci', async ({ page }) => {
+  await page.goto('/burza')
+  const before = await readStock(page, 'bernie')
+  await addToCart(page, 'Bernie', 1)
+  await page.goto('/kosik')
+  await page.getByLabel('Jméno a příjmení').fill('Obnova rezervace')
+  await page.getByLabel('E-mail (sem přijde potvrzení)').fill(`obnova-${Date.now()}@example.cz`)
+  await page.getByRole('button', { name: 'Hotově při převzetí' }).click()
+  let loseResponse = true
+  await page.route('**/kosik', async (route) => {
+    if (loseResponse && route.request().headers()['next-action']) {
+      loseResponse = false
+      const response = await route.fetch()
+      expect(response.ok()).toBe(true)
+      // Server už požadavek dokončil; prohlížeč výsledek nedostal.
+      await route.abort('failed')
+    } else {
+      await route.continue()
+    }
+  })
+  await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
+  await expect(page.getByRole('alert')).toBeVisible()
+  await page.reload()
+  await page.getByRole('button', { name: 'Znovu ověřit rezervaci' }).click()
+  await expect(page).toHaveURL(/\/rezervace\//)
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('silentagro:reservation-attempt:v1'))).toBeNull()
+  await page.goto('/burza')
+  expect(await readStock(page, 'bernie')).toBe(before - 1)
+})
+
 test('domovská stránka ukazuje stav skladu a novinky z pole', async ({ page }) => {
   await page.goto('/')
 
@@ -110,12 +140,15 @@ test('u rozvozu je potřeba telefon', async ({ page }) => {
   await expect(page.getByText('U rozvozu potřebujeme telefon')).toBeVisible()
 })
 
-test('košík přežije obnovení stránky', async ({ page }) => {
+test('košík přežije opakované obnovení stránky včetně množství', async ({ page }) => {
   await page.goto('/burza')
   await addToCart(page, 'Bernie', 1.5)
 
   await page.reload()
   await expect(page.getByRole('link', { name: /Košík/ })).toContainText('1')
+  await page.reload()
+  await page.goto('/kosik')
+  await expect(page.locator('.cart__line').filter({ hasText: 'Bernie' })).toContainText('1,5 kg')
 })
 
 test('stránka skladu ukazuje graf a mapu polí', async ({ page }) => {

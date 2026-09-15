@@ -1,3 +1,4 @@
+import { verificationExpiry } from '@/application/verification-policy'
 import { describe, expect, it } from 'vitest'
 import {
   GetUserDetail,
@@ -6,7 +7,6 @@ import {
   SendMessageToUser,
   SetUserActive,
   VerifyEmail,
-  verificationExpiry,
 } from '@/application/use-cases/users'
 import { OrderItem } from '@/domain/entities/order'
 import { DeliveryMethod, PaymentMethod, UserRole } from '@/domain/enums'
@@ -49,6 +49,8 @@ const placeOrder = (
     subtotal: Money.fromCzk(20),
     deliveryFee: Money.zero(),
     total: Money.fromCzk(20),
+    discount: Money.zero(),
+    pricingVersion: 1,
     userId: options.userId ?? null,
     publicToken: `token-o-${options.createdAt.getTime()}-${options.userId ?? 'host'}`,
     createdAt: options.createdAt,

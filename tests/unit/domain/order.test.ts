@@ -23,7 +23,7 @@ const order = (
   // Poplatek se ukládá spočítaný ze skutečného mezisoučtu, stejně jako při rezervaci.
   const subtotal = items.reduce((sum, item) => sum.plus(item.lineTotal), Money.zero())
 
-  return Order.rehydrate({
+  return Order.create({
     id: 1,
     code: '#2610',
     publicToken: 'token'.repeat(6),
@@ -91,6 +91,25 @@ describe('Order doprava', () => {
   it('celkem je mezisoučet plus doprava', () => {
     const o = order([item('Bernie', 22, 2)], DeliveryMethod.LOCAL_DELIVERY)
     expect(o.total.czk).toBe(104)
+  })
+})
+
+describe('Order.calculateAmounts', () => {
+  it('odečte slevu na haléře a zachová poplatek za dopravu', () => {
+    const amounts = Order.calculateAmounts(Money.fromCzk(100.50), Money.fromCzk(60), Money.fromCzk(20.25))
+    expect(amounts.subtotal.czk).toBe(100.50)
+    expect(amounts.discount.czk).toBe(20.25)
+    expect(amounts.total.czk).toBe(140.25)
+    expect(amounts.pricingVersion).toBe(1)
+  })
+
+  it('povolí plnou slevu na položky, dopravu nadále účtuje', () => {
+    const amounts = Order.calculateAmounts(Money.fromCzk(100), Money.fromCzk(60), Money.fromCzk(100))
+    expect(amounts.total.czk).toBe(60)
+  })
+
+  it('odmítne slevu vyšší než cena položek, i když by ji pokryla doprava', () => {
+    expect(() => Order.calculateAmounts(Money.fromCzk(100), Money.fromCzk(60), Money.fromCzk(100.01))).toThrow()
   })
 })
 

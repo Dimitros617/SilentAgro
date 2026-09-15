@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["scripts/mail-worker.ts!", "prisma/seed.ts", "prisma/create-farmer.ts", "tests/e2e/auth.setup.ts", "tests/types/**/*.ts", "scripts/quality-scan.mjs", "scripts/trivy-scan.mjs"],
+  "project": ["src/**/*.{ts,tsx}!", "scripts/mail-worker.ts!", "scripts/**/*.mjs", "prisma/**/*.ts", "tests/**/*.ts", "*.{ts,mjs}", "eslint/**/*.mjs"],
+  "ignoreFiles": ["src/components/shop/scale.tsx"],
+  "ignoreDependencies": ["@vitest/coverage-v8", "eslint-config-next"],
+  "ignoreBinaries": ["tsx"]
+}

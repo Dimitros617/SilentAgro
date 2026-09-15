@@ -5,7 +5,7 @@
  * Modul stojí sám a nic neimportuje, aby ho mohl použít i seed spouštěný mimo aplikaci —
  * pravidlo tak má jednu jedinou definici.
  */
-export const ORDER_CODE_OFFSET = 2609
+const ORDER_CODE_OFFSET = 2609
 
 export const orderCodeFor = (id: number): string => `#${ORDER_CODE_OFFSET + id}`
 

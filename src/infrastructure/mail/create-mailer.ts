@@ -36,8 +36,8 @@ export class NodemailerMailer implements Mailer {
       host: config.host,
       port: config.port,
       secure: config.secure,
-      // Bez těchto limitů čeká nedostupný SMTP server na výchozí timeout operačního
-      // systému — u rezervace to znamená zákazníka zírajícího na zablokované tlačítko.
+      // Omezené čekání uvolní worker pro další zprávy a ukončí i ruční odeslání
+      // z administrace, když SMTP server není dostupný.
       connectionTimeout: 5_000,
       greetingTimeout: 5_000,
       socketTimeout: 10_000,
@@ -50,6 +50,7 @@ export class NodemailerMailer implements Mailer {
   async send(message: MailMessage): Promise<void> {
     await this.transport.sendMail({
       from: this.from,
+      ...(message.messageId ? { messageId: message.messageId } : {}),
       to: message.to,
       subject: message.subject,
       text: message.text,
@@ -58,7 +59,7 @@ export class NodemailerMailer implements Mailer {
         ? {
             attachments: message.attachments.map((attachment) => ({
               filename: attachment.filename,
-              content: attachment.content,
+              content: Buffer.from(attachment.content),
               contentType: attachment.contentType,
               ...(attachment.cid
                 ? { cid: attachment.cid, contentDisposition: 'inline' as const }

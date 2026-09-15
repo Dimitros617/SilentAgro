@@ -1,19 +1,17 @@
-import type { Order, User } from '@/domain/entities'
-import type { OrderNotifier, OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
+import type { Order } from '@/domain/entities'
+import type { OrderPresenter } from '@/domain/ports/order-presentation'
+import type { OrderMailComposer } from '@/domain/ports/order-delivery'
 import type {
   DeliveryPolicy,
   FarmIdentity,
-  Logger,
-  Mailer,
+  MailMessage,
   PaymentInstruction,
-  SentMailPreview,
+  OrderMailPreview,
 } from '@/domain/ports/services'
 import {
   renderCustomerConfirmation,
-  renderFarmerMessage,
   renderFarmerNotification,
   renderOrderCancelled,
-  renderVerification,
 } from '@/infrastructure/mail/templates'
 import { tryRenderQrDataUrl, tryRenderQrPng } from '@/infrastructure/payment/qr-code'
 import { type BankAccount, buildPaymentDetails } from '@/infrastructure/payment/spayd'
@@ -24,15 +22,12 @@ export interface OrderMailConfig {
 }
 
 /**
- * Skládá a odesílá obě zprávy o nové objednávce a umí z týchž šablon vyrobit náhled
- * pro stránku potvrzení. Náhled se **nepíše zvlášť** — kdyby se text na stránce
- * formuloval podruhé, časem by se s odeslaným e-mailem rozešel.
+ * Připravuje obsah pro frontu i náhled na stránce potvrzení ze společných šablon.
+ * Síťové odesílání zajišťuje samostatný worker.
  */
-export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNotifier {
+export class TemplateOrderMailComposer implements OrderMailComposer, OrderPresenter {
   constructor(
     private readonly deps: {
-      mailer: Mailer
-      logger: Logger
       bank: BankAccount
       farm: FarmIdentity
       delivery: DeliveryPolicy
@@ -48,11 +43,11 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
     return `${this.deps.config.publicBaseUrl}/admin/objednavky`
   }
 
-  async notifyOrderPlaced(order: Order): Promise<void> {
+  async orderPlaced(order: Order): Promise<readonly MailMessage[]> {
     const payment = buildPaymentDetails(order, this.deps.bank, this.deps.delivery.holdDays)
     const qrPng = payment ? await tryRenderQrPng(payment.spayd) : null
 
-    const messages = [
+    return [
       renderCustomerConfirmation({
         order,
         farm: this.deps.farm,
@@ -68,40 +63,10 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
         adminUrl: this.adminUrl(),
       }),
     ]
-
-    // Obě zprávy najednou, ne za sebou. Sekvenčně by nedostupný SMTP server stál
-    // dva timeouty a rezervace by tak dlouho nevrátila odpověď.
-    //
-    // Každá se ošetřuje zvlášť: když zákazníkova adresa odmítá poštu, farmář se
-    // o objednávce musí dozvědět stejně.
-    await Promise.all(
-      messages.map((message) =>
-        this.trySend(message.to, () => this.deps.mailer.send(message), order.code),
-      ),
-    )
   }
 
-  async notifyOrderCancelled(order: Order, reason: string): Promise<void> {
-    const message = renderOrderCancelled({ order, farm: this.deps.farm, reason })
-    await this.trySend(message.to, () => this.deps.mailer.send(message), order.code)
-  }
-
-  /**
-   * Ověřovací zpráva a zpráva od farmáře výjimku **nepolykají**.
-   *
-   * U potvrzení objednávky je pravdou sklad a e-mail je notifikace navíc. Tady je
-   * ale zpráva celý účel akce — když se neodešle, farmář to musí vědět.
-   */
-  async sendVerification(user: User, verificationUrl: string): Promise<void> {
-    await this.deps.mailer.send(
-      renderVerification(this.deps.farm, user.name, user.email.value, verificationUrl),
-    )
-  }
-
-  async sendMessage(user: User, subject: string, body: string): Promise<void> {
-    await this.deps.mailer.send(
-      renderFarmerMessage(this.deps.farm, user.name, user.email.value, subject, body),
-    )
+  orderCancelled(order: Order, reason: string): MailMessage {
+    return renderOrderCancelled({ order, farm: this.deps.farm, reason })
   }
 
   async paymentInstructionFor(order: Order): Promise<PaymentInstruction | null> {
@@ -120,7 +85,7 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
     }
   }
 
-  async sentMailPreviews(order: Order): Promise<SentMailPreview[]> {
+  async mailPreviews(order: Order): Promise<OrderMailPreview[]> {
     const payment = buildPaymentDetails(order, this.deps.bank, this.deps.delivery.holdDays)
 
     const customer = renderCustomerConfirmation({
@@ -142,18 +107,5 @@ export class MailOrderNotifier implements OrderNotifier, OrderPresenter, UserNot
       { kind: 'E-mail zákazníkovi', to: customer.to, subject: customer.subject, body: customer.text },
       { kind: 'E-mail farmáři', to: farmer.to, subject: farmer.subject, body: farmer.text },
     ]
-  }
-
-  /** Výpadek SMTP nesmí zrušit platnou rezervaci — sklad je pravda, mail je notifikace. */
-  private async trySend(recipient: string, send: () => Promise<void>, orderCode: string) {
-    try {
-      await send()
-    } catch (error) {
-      this.deps.logger.error('Odeslání potvrzení selhalo, objednávka zůstává platná', {
-        orderCode,
-        recipient,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
   }
 }

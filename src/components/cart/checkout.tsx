@@ -1,10 +1,12 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
-import { reserveOrderAction } from '@/app/actions/order'
+import { useState } from 'react'
+import { useReservation } from './use-reservation'
+import { ReservationRecovery } from './reservation-recovery'
 import type { VarietyView } from '@/application/dto'
+import { formatCzkPerKg as formatCzk, formatKg } from '@/shared/format'
+import { summarizeCheckout } from './checkout-summary'
 import { useCart } from '@/components/cart/cart-provider'
 import {
   type CheckoutErrors,
@@ -19,12 +21,6 @@ import {
   PaymentMethod,
 } from '@/domain/enums'
 
-const formatCzk = (value: number) =>
-  `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: value % 1 === 0 ? 0 : 2, minimumFractionDigits: value % 1 === 0 ? 0 : 2 }).format(value)} Kč`
-
-const formatKg = (value: number) =>
-  `${new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 1 }).format(value)} kg`
-
 export interface CheckoutPolicy {
   feeCzk: number
   freeAboveCzk: number
@@ -35,14 +31,12 @@ export function Checkout({
   varieties,
   policy,
 }: {
-  varieties: VarietyView[]
-  policy: CheckoutPolicy
+  readonly varieties: VarietyView[]
+  readonly policy: CheckoutPolicy
 }) {
   const { lines, dispatch } = useCart()
-  const router = useRouter()
-  const [pending, setPending] = useState(false)
+  const { attempt, restored, pending, serverError, reserve, startNewReservation } = useReservation()
   const [errors, setErrors] = useState<CheckoutErrors>({})
-  const [serverError, setServerError] = useState('')
 
   const [form, setForm] = useState<CheckoutForm>({
     name: '',
@@ -53,71 +47,35 @@ export function Checkout({
     payment: PaymentMethod.QR_CODE,
   })
 
-  const byId = useMemo(() => new Map(varieties.map((variety) => [variety.id, variety])), [varieties])
-
-  const rows = lines
-    .map((line) => {
-      const variety = byId.get(line.varietyId)
-      return variety ? { line, variety, total: variety.priceCzk * line.quantityKg } : null
-    })
-    .filter((row): row is NonNullable<typeof row> => row !== null)
-
-  const subtotal = rows.reduce((sum, row) => sum + row.total, 0)
-  const totalKg = rows.reduce((sum, row) => sum + row.line.quantityKg, 0)
-
-  /**
-   * Souhrn na klientovi je jen náhled. Závazná částka je ta, kterou spočítá server
-   * z vlastních cen — klientská čísla se do objednávky nikdy nedostanou.
-   */
-  const deliveryFee =
-    form.delivery === DeliveryMethod.LOCAL_DELIVERY && subtotal <= policy.freeAboveCzk
-      ? policy.feeCzk
-      : 0
+  // Klient a server sdílejí pravidla zaokrouhlení i dopravy. Server stále určuje ceny.
+  const { rows, unavailableLines, subtotal, totalKg, deliveryFee, total } =
+    summarizeCheckout(lines, varieties, form.delivery, policy)
 
   const update = (patch: Partial<CheckoutForm>) => setForm((current) => ({ ...current, ...patch }))
 
-  /**
-   * Záměrně bez `useTransition`: `router.push` volaný uvnitř přechodu se v App Routeru
-   * ztratí — server action doběhne, košík se vyprázdní, ale k navigaci nedojde.
-   * Vlastní příznak `pending` dělá totéž pro zablokování tlačítka a navigace proběhne
-   * mimo přechod.
-   */
-  const submit = async () => {
-    const found = validateCheckout(form)
-    setErrors(found)
-    setServerError('')
-    if (hasErrors(found)) return
-
-    setPending(true)
-    try {
-      const result = await reserveOrderAction({
-        customer: {
-          name: form.name,
-          email: form.email,
-          phone: form.phone,
-          note: form.note,
-        },
-        delivery: form.delivery,
-        payment: form.payment,
-        items: lines.map((line) => ({
-          varietyId: line.varietyId,
-          quantityKg: line.quantityKg,
-        })),
-      })
-
-      if (!result.ok) {
-        setServerError(result.error)
-        return
-      }
-
-      dispatch({ type: 'clear' })
-      router.push(`/rezervace/${result.value.token}`)
-    } finally {
-      setPending(false)
+  async function submit(): Promise<void> {
+    if (!restored || pending) return
+    if (!attempt) {
+      const found = validateCheckout(form)
+      setErrors(found)
+      if (hasErrors(found) || unavailableLines.length > 0) return
     }
+    await reserve(form, lines)
   }
 
-  if (rows.length === 0) {
+  if (attempt) {
+    return (
+      <ReservationRecovery
+        attempt={attempt}
+        pending={pending}
+        error={serverError}
+        onContinue={() => void submit()}
+        onStartNew={startNewReservation}
+      />
+    )
+  }
+
+  if (lines.length === 0) {
     return (
       <div className="card card--dashed">
         <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Košík je zatím prázdný</p>
@@ -134,6 +92,18 @@ export function Checkout({
   return (
     <div className="cart">
       <div className="stack" style={{ gap: 16 }}>
+        {unavailableLines.map((line) => (
+          <div key={line.varietyId} className="alert alert--error">
+            Odrůda z uloženého košíku už není v nabídce.
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => dispatch({ type: 'remove', varietyId: line.varietyId })}
+            >
+              Odebrat nedostupnou odrůdu
+            </button>
+          </div>
+        ))}
         <div className="card card--flush">
           {rows.map(({ line, variety, total }) => (
             <div key={line.varietyId} className="cart__line">
@@ -141,7 +111,7 @@ export function Checkout({
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600 }}>{variety.name}</div>
                 <div className="muted">
-                  {variety.priceLabel}/kg · {formatKg(line.quantityKg)}
+                  {variety.priceLabel}/kg · {formatKg({ value: line.quantityKg })}
                 </div>
               </div>
               <div className="display" style={{ fontWeight: 700, fontSize: 18 }}>
@@ -253,12 +223,12 @@ export function Checkout({
           <span>
             {form.delivery === DeliveryMethod.LOCAL_DELIVERY ? 'Rozvoz' : 'Osobní odběr'}
           </span>
-          <span>{deliveryFee === 0 ? 'zdarma' : formatCzk(deliveryFee)}</span>
+          <span>{deliveryFee.isZero() ? 'zdarma' : formatCzk(deliveryFee)}</span>
         </div>
         <hr className="rule" />
         <div className="summary__total">
           <span style={{ fontWeight: 600 }}>Celkem</span>
-          <span className="summary__amount">{formatCzk(subtotal + deliveryFee)}</span>
+          <span className="summary__amount">{formatCzk(total)}</span>
         </div>
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', marginTop: 6 }}>
           {formatKg(totalKg)} celkem · {PAYMENT_LABELS[form.payment]}
@@ -275,7 +245,7 @@ export function Checkout({
           className="btn btn--gold btn--block btn--lg"
           style={{ marginTop: 20 }}
           onClick={() => void submit()}
-          disabled={pending}
+          disabled={pending || unavailableLines.length > 0}
         >
           {pending ? 'Rezervuji…' : 'Závazně rezervovat'}
         </button>

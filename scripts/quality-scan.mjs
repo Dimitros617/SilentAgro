@@ -1,0 +1,63 @@
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const root = fileURLToPath(new URL('..', import.meta.url))
+const output = new URL('../reports/quality/', import.meta.url)
+mkdirSync(output, { recursive: true })
+
+const checks = [
+  {
+    name: 'SonarJS',
+    args: ['node_modules/eslint/bin/eslint.js', 'src', 'scripts', 'prisma', '--config', 'eslint.quality.config.mjs', '--format', 'json'],
+    report: 'sonarjs.json',
+  },
+  {
+    name: 'jscpd',
+    args: ['node_modules/jscpd/run-jscpd.js', 'src', 'scripts', 'prisma', '--config', '.jscpd.json'],
+  },
+  {
+    name: 'Knip',
+    args: ['node_modules/knip/bin/knip.js', '--reporter', 'json'],
+    report: 'knip.json',
+  },
+  {
+    name: 'Knip production',
+    // Exporty používané pouze testy vyžadují posouzení. Nálezy zůstávají v reportu
+    // i s původním exit kódem; selhání samotného nástroje vždy shodí celý běh.
+    reviewFindings: true,
+    args: ['node_modules/knip/bin/knip.js', '--production', '--reporter', 'json'],
+    report: 'knip-production.json',
+  },
+]
+
+function hasKnipFindings(output) {
+  try {
+    const report = JSON.parse(output)
+    return Array.isArray(report.issues) && report.issues.length > 0
+  } catch {
+    return false
+  }
+}
+
+const results = []
+for (const check of checks) {
+  console.info(`Running ${check.name}...`)
+  const result = spawnSync(process.execPath, check.args, {
+    cwd: root, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024,
+  })
+  if (check.report) writeFileSync(new URL(check.report, output), result.stdout ?? '')
+  if (result.stderr) console.error(result.stderr.trim())
+  if (result.error) console.error(result.error.message)
+  const exitCode = result.status ?? 2
+  let status = exitCode === 0 ? 'passed' : 'failed'
+  if (check.reviewFindings && exitCode === 1 && !result.error && hasKnipFindings(result.stdout)) {
+    status = 'review'
+  }
+  results.push({ tool: check.name, exitCode, status })
+  console.info(`${check.name}: ${status} (exit ${exitCode})`)
+}
+
+writeFileSync(new URL('runs.json', output), JSON.stringify({ createdAt: new Date().toISOString(), results }, null, 2))
+console.info('Reports: reports/quality/. Status "review" means findings remain and require assessment.')
+if (results.some((result) => result.status === 'failed')) process.exitCode = 1

@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { OrderRowView } from '@/application/dto'
 
 export interface CancelOrderDialogProps {
-  order: OrderRowView | null
-  pending: boolean
-  error: string
-  onConfirm: (reason: string) => void
-  onClose: () => void
+  readonly order: OrderRowView | null
+  readonly pending: boolean
+  readonly error: string
+  readonly onConfirm: (reason: string) => void
+  readonly onClose: () => void
 }
 
 /**
@@ -42,8 +42,11 @@ export function CancelOrderDialog({
       className="modal modal--wide"
       aria-labelledby="cancel-dialog-title"
       onClose={onClose}
+      onCancel={(event) => {
+        if (pending) event.preventDefault()
+      }}
       onClick={(event) => {
-        if (event.target === dialogRef.current) onClose()
+        if (event.target === event.currentTarget) onClose()
       }}
     >
       <div className="modal__content stack" style={{ gap: 14 }}>
@@ -65,6 +68,7 @@ export function CancelOrderDialog({
           <textarea
             className="textarea"
             rows={4}
+            maxLength={1000}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             placeholder="Kroupy zničily úrodu, omlouváme se…"
@@ -93,7 +97,7 @@ export function CancelOrderDialog({
             className="btn btn--primary"
             style={{ flex: 1, background: 'var(--clay)', whiteSpace: 'nowrap' }}
             onClick={() => onConfirm(reason)}
-            disabled={pending || reason.trim().length === 0}
+            disabled={pending || reason.trim().length < 3}
           >
             {/* Krátký popisek: že zákazníkovi odejde e-mail, říká text nad formulářem. */}
             {pending ? 'Ruším…' : 'Zrušit rezervaci'}

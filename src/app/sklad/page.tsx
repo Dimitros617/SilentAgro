@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { GetStockOverview } from '@/application/use-cases/catalog'
 import { Bins } from '@/components/stock/bins'
 import { HarvestChart } from '@/components/stock/harvest-chart'
+import { KpiGrid } from '@/components/stock/kpi-grid'
 import { FieldStatus } from '@/domain/enums'
 import { getContainer } from '@/infrastructure/di/container'
 
@@ -32,17 +33,7 @@ export default async function StockPage() {
         <p className="lead">Vše, co je vykopané, zvážené a uložené ve stodole.</p>
       </div>
 
-      <div className="grid-auto grid-auto--narrow">
-        {overview.kpis.map((kpi) => (
-          <div key={kpi.label} className="card">
-            <span className="eyebrow">{kpi.label}</span>
-            <div className="display kpi__value">{kpi.value}</div>
-            <div className={kpi.tone === 'green' ? 'kpi__delta kpi__delta--green' : 'kpi__delta'}>
-              {kpi.delta}
-            </div>
-          </div>
-        ))}
-      </div>
+      <KpiGrid kpis={overview.kpis} />
 
       <div className="grid-two">
         <section className="card">
@@ -53,7 +44,7 @@ export default async function StockPage() {
         </section>
 
         <section className="card">
-          <h2 className="display h3">Ubývání zásob (14 dní)</h2>
+          <h2 className="display h3">Výkop a sklad — poslední záznamy</h2>
           <p className="muted" style={{ margin: '4px 0 0' }}>
             Sloupce = výkop, čára = stav skladu
           </p>

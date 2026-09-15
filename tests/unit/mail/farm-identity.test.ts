@@ -37,7 +37,7 @@ const bank = { iban: Iban.of('CZ6508000000192000145399'), accountNumber: '200014
 /** Stopy po původní farmě, které se do žádné zprávy nesmí dostat. */
 const FOREIGN = ['SilentAgro', 'Silent Industries', 'farma@silentagro.cz', '+420 777 123 456']
 
-const order = Order.rehydrate({
+const order = Order.create({
   id: 1,
   code: '#2610',
   publicToken: 'abc123',

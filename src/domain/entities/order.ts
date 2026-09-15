@@ -5,6 +5,7 @@ import type { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
 import { formatKg } from '@/shared/format'
+import { variableSymbolFor } from '@/shared/order-code'
 
 export interface OrderItemProps {
   readonly varietyId: number
@@ -19,9 +20,13 @@ export interface OrderItemProps {
  * na původní částce a názvu.
  */
 export class OrderItem {
-  private constructor(private readonly props: OrderItemProps) {}
+  private constructor(private readonly props: OrderItemProps & { readonly lineTotal: Money }) {}
 
   static create(props: OrderItemProps): OrderItem {
+    return new OrderItem({ ...props, lineTotal: props.unitPrice.timesKg(props.quantity) })
+  }
+
+  static rehydrate(props: OrderItemProps & { readonly lineTotal: Money }): OrderItem {
     return new OrderItem(props)
   }
 
@@ -42,7 +47,7 @@ export class OrderItem {
   }
 
   get lineTotal(): Money {
-    return this.props.unitPrice.timesKg(this.props.quantity)
+    return this.props.lineTotal
   }
 }
 
@@ -53,7 +58,16 @@ export interface OrderCustomer {
   readonly note: string
 }
 
-export interface OrderProps {
+/** Uložený výsledek ocenění; načítání objednávky tato pravidla znovu nespouští. */
+export interface OrderAmounts {
+  readonly subtotal: Money
+  readonly deliveryFee: Money
+  readonly discount: Money
+  readonly total: Money
+  readonly pricingVersion: number
+}
+
+export interface OrderProps extends OrderAmounts {
   readonly id: number
   readonly code: string
   readonly publicToken: string
@@ -80,6 +94,25 @@ export class Order {
 
   static rehydrate(props: OrderProps): Order {
     return new Order(props)
+  }
+
+  /** Výpočet pro novou objednávku. Historická data procházejí výhradně rehydrate. */
+  static create(props: Omit<OrderProps, 'subtotal' | 'total' | 'discount' | 'pricingVersion'> & { discount?: Money }): Order {
+    const subtotal = Order.subtotalFor(props.items)
+    const amounts = Order.calculateAmounts(subtotal, props.deliveryFee, props.discount)
+    return new Order({ ...props, ...amounts })
+  }
+
+  static subtotalFor(items: readonly OrderItem[]): Money {
+    let subtotal = Money.zero()
+    for (const item of items) subtotal = subtotal.plus(item.lineTotal)
+    return subtotal
+  }
+
+  /** Sleva se vztahuje na položky a nesmí překročit jejich cenu. */
+  static calculateAmounts(subtotal: Money, deliveryFee: Money, discount = Money.zero()): OrderAmounts {
+    const total = subtotal.minus(discount).plus(deliveryFee)
+    return { subtotal, deliveryFee, discount, total, pricingVersion: 1 }
   }
 
   /**
@@ -165,7 +198,15 @@ export class Order {
   }
 
   get subtotal(): Money {
-    return this.props.items.reduce((sum, item) => sum.plus(item.lineTotal), Money.zero())
+    return this.props.subtotal
+  }
+
+  get discount(): Money {
+    return this.props.discount
+  }
+
+  get pricingVersion(): number {
+    return this.props.pricingVersion
   }
 
   get deliveryFee(): Money {
@@ -173,11 +214,13 @@ export class Order {
   }
 
   get total(): Money {
-    return this.subtotal.plus(this.deliveryFee)
+    return this.props.total
   }
 
   get totalKg(): Kilograms {
-    return this.props.items.reduce((sum, item) => sum.plus(item.quantity), Kilograms.zero())
+    let total = Kilograms.zero()
+    for (const item of this.props.items) total = total.plus(item.quantity)
+    return total
   }
 
   /** `Bernie 20 kg · Red Anna 5 kg` — jeden řádek do e-mailu i do tabulky objednávek. */
@@ -189,7 +232,7 @@ export class Order {
 
   /** Variabilní symbol pro platbu: kód bez mřížky. */
   get variableSymbol(): string {
-    return this.props.code.replace(/\D/g, '')
+    return variableSymbolFor(this.props.code)
   }
 
   withStatus(status: OrderStatus): Order {

@@ -1,11 +1,14 @@
+import { requireFarmer } from '@/infrastructure/auth/session'
 import { GetAdminOverview } from '@/application/use-cases/admin'
 import { Bins } from '@/components/stock/bins'
 import { HarvestChart } from '@/components/stock/harvest-chart'
+import { KpiGrid } from '@/components/stock/kpi-grid'
 import { getContainer } from '@/infrastructure/di/container'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminOverviewPage() {
+  await requireFarmer()
   const container = getContainer()
   const overview = await new GetAdminOverview({
     uow: container.uow,
@@ -14,19 +17,7 @@ export default async function AdminOverviewPage() {
 
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <div className="grid-auto grid-auto--narrow">
-        {overview.kpis.map((kpi) => (
-          <div key={kpi.label} className="card">
-            <span className="eyebrow">{kpi.label}</span>
-            <div className="display kpi__value" style={{ fontSize: 36 }}>
-              {kpi.value}
-            </div>
-            <div className={kpi.tone === 'green' ? 'kpi__delta kpi__delta--green' : 'kpi__delta'}>
-              {kpi.delta}
-            </div>
-          </div>
-        ))}
-      </div>
+      <KpiGrid kpis={overview.kpis} valueFontSize={36} />
 
       <div className="grid-two">
         <section className="card">

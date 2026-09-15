@@ -1,6 +1,7 @@
 import 'server-only'
 import { randomBytes } from 'node:crypto'
-import type { OrderNotifier, OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
+import type { OrderPresenter, UserNotifier } from '@/domain/ports/order-presentation'
+import type { OrderMailComposer } from '@/domain/ports/order-delivery'
 import type {
   Clock,
   DeliveryPolicy,
@@ -17,16 +18,23 @@ import { BcryptPasswordHasher } from '@/infrastructure/auth/bcrypt-password-hash
 import { JoseTokenService } from '@/infrastructure/auth/jose-token-service'
 import { getEnv } from '@/infrastructure/config/env'
 import { createMailer, describeMailer } from '@/infrastructure/mail/create-mailer'
-import { MailOrderNotifier } from '@/infrastructure/mail/order-notifier'
+import { TemplateOrderMailComposer } from '@/infrastructure/mail/order-mail-composer'
+import { MailUserNotifier } from '@/infrastructure/mail/user-notifier'
 import { prisma } from '@/infrastructure/persistence/prisma/client'
 import { PrismaUnitOfWork } from '@/infrastructure/persistence/prisma/unit-of-work'
 import { TokenBucket } from '@/infrastructure/rate-limit/token-bucket'
 import type { BankAccount } from '@/infrastructure/payment/spayd'
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end -= 1
+  return value.slice(0, end)
+}
+
 export interface Container {
   readonly uow: UnitOfWork
   readonly mailer: Mailer
-  readonly notifier: OrderNotifier
+  readonly orderMailComposer: OrderMailComposer
   readonly presenter: OrderPresenter
   readonly userNotifier: UserNotifier
   readonly hasher: PasswordHasher
@@ -98,21 +106,20 @@ function build(): Container {
     holdDays: env.RESERVATION_HOLD_DAYS,
   }
 
-  const notifier = new MailOrderNotifier({
-    mailer,
-    logger: consoleLogger,
+  const publicBaseUrl = trimTrailingSlashes(env.PUBLIC_BASE_URL)
+  const composer = new TemplateOrderMailComposer({
     bank,
     farm,
     delivery,
-    config: { farmerEmail: env.FARMER_EMAIL, publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/+$/, '') },
+    config: { farmerEmail: env.FARMER_EMAIL, publicBaseUrl },
   })
 
   return {
     uow: new PrismaUnitOfWork(prisma),
     mailer,
-    notifier,
-    presenter: notifier,
-    userNotifier: notifier,
+    orderMailComposer: composer,
+    presenter: composer,
+    userNotifier: new MailUserNotifier({ mailer, farm }),
     hasher: new BcryptPasswordHasher(),
     tokens: new JoseTokenService(env.AUTH_SECRET),
     clock: systemClock,
@@ -123,7 +130,7 @@ function build(): Container {
     delivery,
     config: {
       farmerEmail: env.FARMER_EMAIL,
-      publicBaseUrl: env.PUBLIC_BASE_URL.replace(/\/+$/, ''),
+      publicBaseUrl,
       uploadDir: env.UPLOAD_DIR,
       trustProxy: env.TRUST_PROXY,
     },

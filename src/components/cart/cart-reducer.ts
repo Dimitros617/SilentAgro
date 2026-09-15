@@ -33,6 +33,7 @@ const isValidLine = (line: unknown): line is CartLine => {
 }
 
 const withQuantity = (state: CartLine[], varietyId: number, quantityKg: number): CartLine[] => {
+  if (!Number.isSafeInteger(varietyId) || varietyId <= 0 || !Number.isFinite(quantityKg)) return state
   const normalized = Math.min(MAX_KG, toStep(quantityKg))
 
   if (normalized < STEP) return state.filter((line) => line.varietyId !== varietyId)
@@ -68,8 +69,18 @@ export function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
       return state.filter((line) => line.varietyId !== action.varietyId)
     case 'clear':
       return []
-    case 'hydrate':
-      return Array.isArray(action.lines) ? action.lines.filter(isValidLine) : []
+    case 'hydrate': {
+      if (!Array.isArray(action.lines)) return []
+      const quantities = new Map<number, number>()
+      for (const line of action.lines) {
+        if (!isValidLine(line)) continue
+        const current = quantities.get(line.varietyId) ?? 0
+        quantities.set(line.varietyId, Math.min(MAX_KG, current + line.quantityKg))
+      }
+      const lines: CartLine[] = []
+      for (const [varietyId, quantityKg] of quantities) lines.push({ varietyId, quantityKg })
+      return lines
+    }
     default:
       return state
   }

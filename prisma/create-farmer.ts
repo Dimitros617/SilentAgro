@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { ensureFarmer } from './seed'
+import { ensureFarmer } from './ensure-farmer'
 
 /**
  * Založí účet farmáře a nic víc.

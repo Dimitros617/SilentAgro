@@ -22,9 +22,11 @@ test('hledání zúží seznam', async ({ page }) => {
   const total = await page.locator('.users-row').count()
 
   await page.getByLabel('Hledat uživatele').fill('farma@silentagro.cz')
+  await page.getByRole('button', { name: 'Hledat', exact: true }).click()
   await expect(page.locator('.users-row')).toHaveCount(1)
 
   await page.getByLabel('Hledat uživatele').fill('')
+  await page.getByRole('button', { name: 'Hledat', exact: true }).click()
   await expect(page.locator('.users-row')).toHaveCount(total)
 })
 

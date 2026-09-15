@@ -3,8 +3,9 @@ import { requiresTransfer } from '@/domain/enums'
 import type { Iban } from '@/domain/value-objects/iban'
 import type { Money } from '@/domain/value-objects/money'
 import { formatCzkPerKg } from '@/shared/format'
+import { variableSymbolFor } from '@/shared/order-code'
 
-export interface SpaydInput {
+interface SpaydInput {
   readonly iban: string
   readonly amount: Money
   readonly variableSymbol: string
@@ -54,7 +55,7 @@ const sanitizeMessage = (raw: string): string =>
 
 /** `#2610` → `Agro:2610`. Farmář podle ní páruje platbu i bez variabilního symbolu. */
 export const buildRecipientMessage = (orderCode: string): string =>
-  `Agro:${orderCode.replace(/\D/g, '')}`
+  `Agro:${variableSymbolFor(orderCode)}`
 
 /**
  * Short Payment Descriptor — český standard pro platební QR kódy.

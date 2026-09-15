@@ -18,12 +18,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Build nemá přístup k databázi. Všechny stránky, které ji čtou, mají `force-dynamic`,
 # takže se nic nepředgenerovává a DATABASE_URL tu není potřeba.
-RUN npx prisma generate && npm run build
+RUN npx prisma generate && npm run build && npm run worker:build
 
 # ---------- migrace a seed ----------
 # Jednorázový kontejner. Má devDependencies včetně `prisma` CLI a `tsx`, které
-# runtime image záměrně nenese. Doběhne a skončí, takže ustálený stav zůstává
-# dvoukontejnerový: aplikace a databáze.
+# runtime image záměrně nenese. Po dokončení běží aplikace, mail worker a databáze.
 FROM builder AS migrator
 WORKDIR /app
 CMD ["npx", "prisma", "migrate", "deploy"]
@@ -45,6 +44,7 @@ RUN apk add --no-cache openssl tini
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/dist/mail-worker.cjs ./mail-worker.cjs
 
 # Adresář pro svazek s fotkami se zakládá už v image a patří uživateli `node`.
 # Bez toho by ho Docker vytvořil jako root:root a uid 1000 by do něj nezapsal.

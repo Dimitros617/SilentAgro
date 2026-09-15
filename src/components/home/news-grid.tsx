@@ -7,7 +7,7 @@ const TAG_CLASS: Record<NewsView['tag'], string> = {
   [NewsTag.FIELD]: 'badge badge--muted',
 }
 
-export function NewsCard({ post }: { post: NewsView }) {
+export function NewsCard({ post }: Readonly<{ post: NewsView }>) {
   return (
     <article className="news-card">
       {post.imageUrl ? (
@@ -28,7 +28,7 @@ export function NewsCard({ post }: { post: NewsView }) {
   )
 }
 
-export function NewsGrid({ posts }: { posts: NewsView[] }) {
+export function NewsGrid({ posts }: Readonly<{ posts: NewsView[] }>) {
   if (posts.length === 0) {
     return <p className="muted">Farmář zatím nic nenapsal.</p>
   }

@@ -43,7 +43,7 @@ export const viewport: Viewport = {
   themeColor: '#f6f3ec',
 }
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const session = await readSession()
   const { farm } = getContainer()
 

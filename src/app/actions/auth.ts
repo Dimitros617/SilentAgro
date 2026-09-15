@@ -9,6 +9,12 @@ import { getContainer } from '@/infrastructure/di/container'
 import { type Result, ok } from '@/shared/result'
 import { toResultError } from './errors'
 
+async function completeLogin(user: AuthResult): Promise<Result<AuthResult, string>> {
+  await writeSession({ userId: user.userId, role: user.role, name: user.name })
+  revalidatePath('/', 'layout')
+  return ok(user)
+}
+
 export async function loginAction(
   _previous: unknown,
   formData: FormData,
@@ -30,10 +36,7 @@ export async function loginAction(
       password: String(formData.get('password') ?? ''),
     })
 
-    await writeSession({ userId: result.userId, role: result.role, name: result.name })
-    revalidatePath('/', 'layout')
-
-    return ok(result)
+    return await completeLogin(result)
   } catch (error) {
     return toResultError(error)
   }
@@ -66,10 +69,7 @@ export async function registerAction(
       password: String(formData.get('password') ?? ''),
     })
 
-    await writeSession({ userId: result.userId, role: result.role, name: result.name })
-    revalidatePath('/', 'layout')
-
-    return ok(result)
+    return await completeLogin(result)
   } catch (error) {
     return toResultError(error)
   }

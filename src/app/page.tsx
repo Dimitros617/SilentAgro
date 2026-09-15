@@ -77,7 +77,7 @@ export default async function HomePage() {
           <hr className="rule" />
           <Bins bins={overview.bins} tone="ink" />
           <p className="muted" style={{ color: 'var(--ink-muted)', marginTop: 18 }}>
-            Poslední aktualizace: {overview.updatedAtLabel}
+            Stav načten: {overview.updatedAtLabel}
           </p>
         </div>
       </section>

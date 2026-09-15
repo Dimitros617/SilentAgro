@@ -10,7 +10,7 @@ const ToastContext = createContext<ToastContextValue | null>(null)
 
 const VISIBLE_MS = 2600
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [message, setMessage] = useState('')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 

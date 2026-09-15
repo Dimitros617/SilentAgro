@@ -8,10 +8,9 @@ import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
 import {
   FakeMailer,
-  RecordingLogger,
   fixedClock,
   makeBundle,
-  makeNotifier,
+  makeOrderMailComposer,
   makeVariety,
 } from './fakes'
 
@@ -22,7 +21,6 @@ const setup = async (options: { stockKg?: number; orderKg?: number } = {}) => {
     varieties: [makeVariety({ id: 1, stockKg: options.stockKg ?? 10, priceCzk: 22 })],
   })
   const mailer = new FakeMailer()
-  const logger = new RecordingLogger()
 
   await bundle.orders.create({
     customer: {
@@ -44,6 +42,8 @@ const setup = async (options: { stockKg?: number; orderKg?: number } = {}) => {
     subtotal: Money.fromCzk(55),
     deliveryFee: Money.zero(),
     total: Money.fromCzk(55),
+    discount: Money.zero(),
+    pricingVersion: 1,
     userId: null,
     publicToken: 'token-1',
     createdAt: new Date('2026-09-10T12:00:00Z'),
@@ -55,7 +55,7 @@ const setup = async (options: { stockKg?: number; orderKg?: number } = {}) => {
     useCase: new CancelOrder({
       uow: bundle.uow,
       clock,
-      notifier: makeNotifier(mailer, logger),
+      composer: makeOrderMailComposer(),
     }),
   }
 }
@@ -90,11 +90,11 @@ describe('CancelOrder', () => {
     const ctx = await setup()
     await ctx.useCase.execute(1, 'Kroupy zničily úrodu.')
 
-    expect(ctx.mailer.sent).toHaveLength(1)
-    expect(ctx.mailer.sent[0]?.to).toBe('jan@email.cz')
-    expect(ctx.mailer.sent[0]?.subject).toContain('byla zrušena')
-    expect(ctx.mailer.sent[0]?.text).toContain('Kroupy zničily úrodu.')
-    expect(ctx.mailer.sent[0]?.text).toContain('omlouváme')
+    expect(ctx.outbox.messages).toHaveLength(1)
+    expect(ctx.outbox.messages[0]?.to).toBe('jan@email.cz')
+    expect(ctx.outbox.messages[0]?.subject).toContain('byla zrušena')
+    expect(ctx.outbox.messages[0]?.text).toContain('Kroupy zničily úrodu.')
+    expect(ctx.outbox.messages[0]?.text).toContain('omlouváme')
   })
 
   it('druhé zrušení odmítne a sklad nevrátí podruhé', async () => {

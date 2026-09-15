@@ -1,0 +1,36 @@
+name: Code quality review
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-analyzers:
+    name: SonarJS, duplicity, nepoužívaný kód a Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Kvalita zdrojového kódu
+        run: npm run quality:scan
+      - name: Závislosti a konfigurace
+        if: ${{ !cancelled() }}
+        run: npm run quality:trivy
+      - name: Pokrytí testy
+        if: ${{ !cancelled() }}
+        run: npm test -- --coverage
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: code-quality-reports
+          path: |
+            reports/quality/
+            coverage/
+          retention-days: 14

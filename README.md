@@ -135,20 +135,30 @@ src/
 závislostí, typicky české formátování čísel a dat. `domain` z ní bere `formatKg`,
 `application` formátování do view modelů.
 
-Hranici hlídá ESLint: import z `@/infrastructure/**` nebo `@prisma/client` je chyba, ne
-varování. Pravidlo platí všude a výjimku mají jen `src/infrastructure`, `src/app`,
-`src/components`, `prisma` a `tests`. Dopadá tedy i na `src/instrumentation.ts` — ten
-konfiguraci načítá dynamickým `await import()`, který pravidlo nekontroluje. Statický
-import by tam neprošel, a je to tak správně: hook běží až při startu serveru.
+Hranice hlídá lokální pravidlo ESLintu v `eslint/architecture.mjs`. Kontroluje alias
+`@/`, relativní cesty, typové importy, reexporty i dynamické importy. `shared`,
+`domain` a `application` nesmějí importovat framework ani číst `process.env`.
+Komponenty nesmějí sahat na infrastrukturu; server volají přes `app/actions`.
+Stránky, routy, middleware a startup hook jsou vstupní body, které závislosti propojují.
 
-Během vývoje pravidlo zachytilo skutečné porušení — use-case si sáhl na šablony e-mailů
-a tím věděl, jak se pošta vykresluje.
+Entity mají vlastní soubory; `domain/entities/index.ts` je pouze seznam exportů.
+Administrativní use-cases jsou rozdělené podle tématu a jejich mapování do DTO leží
+v `application/view-models.ts`. Každý Prisma repozitář má vlastní soubor; společná
+továrna pouze sestavuje jejich balík pro `UnitOfWork`.
+
+Podrobný průchod moduly, opravené nálezy a pravidla pro další úpravy jsou
+v [review kódu](docs/code-review.md).
+Celkový pohled na vzory, tok transakce a zbývající omezení shrnuje
+[druhý průchod architekturou](docs/architecture-review.md).
+
+Idempotenci rezervací, trvalou frontu pošty, stránkování a historické ceny popisuje
+[spolehlivost rezervací](docs/reliable-orders.md), včetně migrace a spuštění workeru.
 
 **Proč `src/app`, a ne `src/presentation/app`:** Next.js hledá App Router výhradně
 v `app/` nebo `src/app/`. Prezentační vrstvu tedy tvoří `src/app` a `src/components`,
 ostatní vrstvy leží vedle nich.
 
-### Rezervace je jediné místo se skutečnou konkurencí
+### Transakce a souběžné změny
 
 `ReserveOrder` běží v transakci se zámkem řádků (`SELECT … FOR UPDATE`). Celý košík se
 ověří po získání zámku a teprve pak se sklad mění, takže nedostatek u druhé položky
@@ -158,10 +168,30 @@ nezmění ani tu první. Cena se bere vždy ze skladu — klient ji neposílá a
 kilogram, uspěje právě jedna. Test byl prověřen tak, že se `FOR UPDATE` dočasně odstranilo —
 tehdy obě rezervace projdou a test spadne.
 
-E-maily odcházejí až **po** commitu a jejich selhání objednávku neruší. Sklad je pravda,
-pošta je notifikace.
+Zrušení, potvrzení platby a změna stavu zamykají objednávku před čtením. Zrušení
+vrací sklad podle `varietyId`; název a cena v položce jsou historický snapshot.
+Přechod stavu vyžaduje očekávaný stav z formuláře, takže dva kliky ze staré stránky
+nepřeskočí jeden krok. Úprava skladu obdobně kontroluje `expectedStockKg`: formulář
+otevřený před dokončenou rezervací nesmí její odečet přepsat.
+
+Zamykající metody jsou dostupné pouze na `TransactionRepositoryBundle`, který use-case
+dostane uvnitř `runInTransaction`. Totéž platí pro vytvoření objednávky: vložení a
+přidělení kódu jsou dva zápisy, které musejí uspět společně. Běžný `uow.repos` tyto
+metody nenabízí a Prisma adaptér odmítne jejich volání mimo transakci před SQL dotazem.
+Typový kontrakt kontroluje `npm run typecheck` v `tests/types/unit-of-work.ts`.
+
+Ověření a aktivace účtu zamykají uživatele. Server při použití session ověřuje
+aktuální účet v databázi; deaktivace odvolá staré tokeny i po opětovné aktivaci.
+
+Potvrzení a zrušení objednávky se ukládají do e-mailové fronty ve stejné transakci
+jako změna objednávky. Samostatný `mail-worker` je odesílá po commitu a při chybě
+odeslání opakuje. Podrobnosti včetně spuštění mimo Docker popisuje
+[spolehlivost objednávek](docs/reliable-orders.md).
 
 ## Konfigurace
+
+Nástrojové review, skutečné nálezy a opakovatelné skeny popisuje
+[Code quality review](docs/code-quality-review.md), včetně nastavení SonarQube Cloud pro osobní projekt.
 
 Vše, co se nastavuje, je v `.env.example` i s vysvětlením. Jediná výjimka je
 `UPLOAD_DIR`: cestu ke složce s fotkami určuje compose napevno, aby odpovídala
@@ -227,9 +257,9 @@ npm run test:integration  # proti MySQL, vyžaduje TEST_DATABASE_URL
 npm run test:e2e          # Playwright proti běžící aplikaci
 ```
 
-Unit sada sahá na disk na jediném místě: `tests/unit/config/compose-env.test.ts` čte
-`env.ts`, `.env.example` a oba compose soubory a hlídá, že se konfigurace nerozejde.
-Cesty jsou relativní, takže se sada pouští z kořene repozitáře.
+Unit sada nevyžaduje databázi ani síť. Konfigurační testy čtou soubory projektu
+a test hranic vrstev spouští skutečný ESLint nad krátkými ukázkami kódu.
+Sadu pouštějte z kořene repozitáře.
 
 **Integrační testy** potřebují databázi, která existuje a má nasazené migrace — helper
 jen otevře spojení, sám nemigruje:
@@ -287,8 +317,9 @@ burze, která je ze stránky dočasně sundaná. Zapnou se spolu s ní.
 
 ## Docker
 
-Sestava je dvoukontejnerová: `app` a `db`, propojené přímo po interní síti jako `db:3306`.
-Port databáze se na hostitele nepublikuje, port aplikace jen na `127.0.0.1`.
+Sestavu tvoří `app`, `mail-worker` a `db`. Aplikace i worker přistupují k databázi
+po interní síti jako `db:3306`. Port databáze se na hostitele nepublikuje,
+port aplikace jen na `127.0.0.1`; worker žádný port nepotřebuje.
 
 `migrator` je jednorázový kontejner ze stage `builder` — nasadí migrace a skončí.
 Migrace nejde spustit z runtime image: `output: 'standalone'` v něm nenechá `prisma` CLI

@@ -1,5 +1,5 @@
 import { Field, HarvestEntry, NewsPost, Order, StorageReading, User, Variety } from '@/domain/entities'
-import { OrderStatus, PaymentMethod, UserRole } from '@/domain/enums'
+import { OrderStatus, PaymentMethod } from '@/domain/enums'
 import { ConflictError, NotFoundError } from '@/domain/errors'
 import type {
   FieldRepository,
@@ -9,12 +9,13 @@ import type {
   NewUserInput,
   NewVarietyInput,
   NewsRepository,
-  OrderRepository,
+  TransactionOrderRepository,
   RepositoryBundle,
+  TransactionRepositoryBundle,
   StorageReadingRepository,
   UserOrderStats,
-  UserRepository,
-  VarietyRepository,
+  TransactionUserRepository,
+  TransactionVarietyRepository,
 } from '@/domain/ports/repositories'
 import type { Clock, Logger, MailMessage, Mailer, PasswordHasher, TokenGenerator } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
@@ -24,9 +25,11 @@ import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
 // Pravidlo pro kód objednávky má jednu definici; fake ji sdílí s produkčním
 // repozitářem, aby test neověřoval kopii pravidla uvnitř fake implementace.
-import { orderCodeFor } from '@/infrastructure/persistence/prisma/repositories'
-import { MailOrderNotifier } from '@/infrastructure/mail/order-notifier'
+import { orderCodeFor } from '@/shared/order-code'
+import { TemplateOrderMailComposer } from '@/infrastructure/mail/order-mail-composer'
 import { Iban } from '@/domain/value-objects/iban'
+import type { OrderFilter, PageRequest, UserFilter } from '@/domain/ports/pagination'
+import type { MailOutboxRepository, ReservationRequestRepository } from '@/domain/ports/order-delivery'
 
 export const makeVariety = (overrides: Partial<{
   id: number
@@ -51,7 +54,7 @@ export const makeVariety = (overrides: Partial<{
     isActive: overrides.isActive ?? true,
   })
 
-export class InMemoryVarietyRepository implements VarietyRepository {
+class InMemoryVarietyRepository implements TransactionVarietyRepository {
   readonly items = new Map<number, Variety>()
   private nextId = 100
 
@@ -104,7 +107,7 @@ export class InMemoryVarietyRepository implements VarietyRepository {
   }
 }
 
-export class InMemoryOrderRepository implements OrderRepository {
+export class InMemoryOrderRepository implements TransactionOrderRepository {
   readonly items = new Map<number, Order>()
   private nextId = 1
 
@@ -118,6 +121,10 @@ export class InMemoryOrderRepository implements OrderRepository {
       items: [...input.items],
       delivery: input.delivery,
       deliveryFee: input.deliveryFee,
+      subtotal: input.subtotal,
+      discount: input.discount,
+      total: input.total,
+      pricingVersion: input.pricingVersion,
       payment: input.payment,
       status: OrderStatus.NEW,
       paidAt: null,
@@ -134,6 +141,10 @@ export class InMemoryOrderRepository implements OrderRepository {
     return this.items.get(id) ?? null
   }
 
+  async lockForUpdate(id: number): Promise<Order | null> {
+    return this.findById(id)
+  }
+
   async findByPublicToken(token: string): Promise<Order | null> {
     return [...this.items.values()].find((o) => o.publicToken === token) ?? null
   }
@@ -142,8 +153,27 @@ export class InMemoryOrderRepository implements OrderRepository {
     return [...this.items.values()].sort((a, b) => b.id - a.id).slice(0, limit)
   }
 
+  private filtered(filter: OrderFilter): Order[] {
+    return [...this.items.values()].filter((order) => {
+      if (filter.userId !== undefined && order.userId !== filter.userId) return false
+      if (filter.status && order.status !== filter.status) return false
+      if (filter.cancelled !== undefined && order.isCancelled !== filter.cancelled) return false
+      const text = `${order.code} ${order.customer.name} ${order.customer.email.value}`.toLowerCase()
+      return text.includes(filter.query.toLowerCase())
+    }).sort((a, b) => b.id - a.id)
+  }
+
+  async listPage(page: PageRequest, filter: OrderFilter): Promise<Order[]> {
+    const offset = (page.page - 1) * page.pageSize
+    return this.filtered(filter).slice(offset, offset + page.pageSize)
+  }
+
+  async countFiltered(filter: OrderFilter): Promise<number> {
+    return this.filtered(filter).length
+  }
+
   async countByStatus(status: OrderStatus): Promise<number> {
-    return [...this.items.values()].filter((o) => o.status === status).length
+    return [...this.items.values()].filter((o) => !o.isCancelled && o.status === status).length
   }
 
   async updateStatus(id: number, status: OrderStatus): Promise<Order> {
@@ -197,6 +227,10 @@ export class InMemoryOrderRepository implements OrderRepository {
           items: [...order.items],
           delivery: order.delivery,
           deliveryFee: order.deliveryFee,
+          subtotal: order.subtotal,
+          discount: order.discount,
+          total: order.total,
+          pricingVersion: order.pricingVersion,
           payment: order.payment,
           status: order.status,
           paidAt: order.paidAt,
@@ -213,20 +247,20 @@ export class InMemoryOrderRepository implements OrderRepository {
 
   async reservedKg(): Promise<Kilograms> {
     return [...this.items.values()]
-      .filter((o) => o.status !== OrderStatus.COLLECTED)
+      .filter((o) => !o.isCancelled && o.status !== OrderStatus.COLLECTED)
       .reduce((sum, o) => sum.plus(o.totalKg), Kilograms.zero())
   }
 
-  async revenueSince(since: Date): Promise<Money> {
+  async orderValueSince(since: Date): Promise<Money> {
     return [...this.items.values()]
-      .filter((o) => o.createdAt >= since)
+      .filter((o) => !o.isCancelled && o.createdAt >= since)
       .reduce((sum, o) => sum.plus(o.total), Money.zero())
   }
 
   async countAwaitingPayment(since: Date): Promise<number> {
     return [...this.items.values()].filter(
       (o) =>
-        !o.isPaid &&
+        !o.isCancelled && !o.isPaid &&
         o.createdAt >= since &&
         (o.payment === PaymentMethod.BANK_TRANSFER || o.payment === PaymentMethod.QR_CODE),
     ).length
@@ -241,7 +275,7 @@ export class InMemoryOrderRepository implements OrderRepository {
   }
 }
 
-export class InMemoryNewsRepository implements NewsRepository {
+class InMemoryNewsRepository implements NewsRepository {
   readonly items: NewsPost[] = []
   private nextId = 1
 
@@ -263,7 +297,26 @@ export class InMemoryNewsRepository implements NewsRepository {
   }
 }
 
-export class InMemoryUserRepository implements UserRepository {
+class InMemoryUserRepository implements TransactionUserRepository {
+  private filtered(filter: UserFilter): User[] {
+    return this.items.filter((user) => {
+      if (filter.onlyProblems && user.isVerified && user.isActive) return false
+      return `${user.name} ${user.email.value}`.toLowerCase().includes(filter.query.toLowerCase())
+    }).sort((a, b) => b.id - a.id)
+  }
+
+  async listPage(page: PageRequest, filter: UserFilter): Promise<User[]> {
+    const offset = (page.page - 1) * page.pageSize
+    return this.filtered(filter).slice(offset, offset + page.pageSize)
+  }
+
+  async countFiltered(filter: UserFilter): Promise<number> {
+    return this.filtered(filter).length
+  }
+
+  async orderStatsForUsers(userIds: readonly number[]): Promise<UserOrderStats[]> {
+    return (await this.orderStats()).filter((stats) => userIds.includes(stats.userId))
+  }
   readonly items: User[] = []
   private nextId = 1
 
@@ -273,6 +326,14 @@ export class InMemoryUserRepository implements UserRepository {
 
   async findById(id: number): Promise<User | null> {
     return this.items.find((u) => u.id === id) ?? null
+  }
+
+  async lockForUpdate(id: number): Promise<User | null> {
+    return this.findById(id)
+  }
+
+  async lockByVerificationToken(token: string): Promise<User | null> {
+    return this.findByVerificationToken(token)
   }
 
   async create(input: NewUserInput): Promise<User> {
@@ -322,19 +383,25 @@ export class InMemoryUserRepository implements UserRepository {
     }))
   }
 
+  async orderStatsForUser(userId: number): Promise<UserOrderStats | null> {
+    const user = this.items.find((item) => item.id === userId)
+    if (!user) return null
+    return { userId, orderCount: 0, cancelledCount: 0, totalSpent: Money.zero(), lastOrderAt: null }
+  }
+
   last(): User | undefined {
     return this.items.at(-1)
   }
 }
 
-export class InMemoryFieldRepository implements FieldRepository {
+class InMemoryFieldRepository implements FieldRepository {
   constructor(readonly items: Field[] = []) {}
   async listAll(): Promise<Field[]> {
     return this.items
   }
 }
 
-export class InMemoryHarvestRepository implements HarvestRepository {
+class InMemoryHarvestRepository implements HarvestRepository {
   constructor(readonly items: HarvestEntry[] = []) {}
   async listRecent(days: number): Promise<HarvestEntry[]> {
     return this.items.slice(-days)
@@ -344,7 +411,7 @@ export class InMemoryHarvestRepository implements HarvestRepository {
   }
 }
 
-export class InMemoryStorageReadingRepository implements StorageReadingRepository {
+class InMemoryStorageReadingRepository implements StorageReadingRepository {
   constructor(private readonly reading: StorageReading | null = null) {}
   async latest(): Promise<StorageReading | null> {
     return this.reading
@@ -356,11 +423,15 @@ export class InMemoryStorageReadingRepository implements StorageReadingRepositor
  * patří do integračních testů proti skutečné databázi; tady se ověřuje rozhodovací
  * logika use-case, ne chování MySQL.
  */
-export class FakeUnitOfWork implements UnitOfWork {
-  constructor(readonly repos: RepositoryBundle) {}
+class FakeUnitOfWork implements UnitOfWork {
+  readonly repos: RepositoryBundle
 
-  async runInTransaction<T>(work: (repos: RepositoryBundle) => Promise<T>): Promise<T> {
-    return work(this.repos)
+  constructor(private readonly transactionRepos: TransactionRepositoryBundle) {
+    this.repos = transactionRepos
+  }
+
+  async runInTransaction<T>(work: (repos: TransactionRepositoryBundle) => Promise<T>): Promise<T> {
+    return work(this.transactionRepos)
   }
 }
 
@@ -426,6 +497,34 @@ export interface FakeBundleOptions {
   storage?: StorageReading | null
 }
 
+class InMemoryReservationRequests implements ReservationRequestRepository {
+  readonly items = new Map<string, { content: string; orderId: number | null }>()
+
+  async claim(key: string, content: string): Promise<number | null> {
+    const existing = this.items.get(key)
+    if (existing && existing.content !== content) throw new ConflictError('Jiné údaje pokusu')
+    if (!existing) this.items.set(key, { content, orderId: null })
+    return existing?.orderId ?? null
+  }
+
+  async complete(key: string, orderId: number): Promise<void> {
+    const entry = this.items.get(key)
+    if (!entry) throw new Error('Pokus nebyl zahájen')
+    entry.orderId = orderId
+  }
+}
+
+class InMemoryOutbox implements MailOutboxRepository {
+  readonly items = new Map<string, MailMessage>()
+
+  get messages(): MailMessage[] { return [...this.items.values()] }
+
+  async enqueue(key: string, message: MailMessage): Promise<void> {
+    if (this.items.has(key)) throw new ConflictError('Zpráva již existuje')
+    this.items.set(key, message)
+  }
+}
+
 export function makeBundle(options: FakeBundleOptions = {}) {
   const varieties = new InMemoryVarietyRepository(options.varieties ?? [])
   const orders = new InMemoryOrderRepository()
@@ -434,14 +533,13 @@ export function makeBundle(options: FakeBundleOptions = {}) {
   const fields = new InMemoryFieldRepository(options.fields ?? [])
   const harvest = new InMemoryHarvestRepository(options.harvest ?? [])
   const storage = new InMemoryStorageReadingRepository(options.storage ?? null)
+  const reservationRequests = new InMemoryReservationRequests()
+  const outbox = new InMemoryOutbox()
 
-  const repos: RepositoryBundle = { varieties, orders, news, users, fields, harvest, storage }
+  const repos: TransactionRepositoryBundle = { varieties, orders, news, users, fields, harvest, storage, reservationRequests, outbox }
 
-  return { repos, uow: new FakeUnitOfWork(repos), varieties, orders, news, users, fields, harvest, storage }
+  return { repos, uow: new FakeUnitOfWork(repos), varieties, orders, news, users, fields, harvest, storage, reservationRequests, outbox }
 }
-
-export const FARMER_ROLE = UserRole.FARMER
-
 
 export class FakeUserNotifier {
   readonly verifications: Array<{ email: string; url: string }> = []
@@ -460,7 +558,7 @@ export class FakeUserNotifier {
 }
 
 /** Identita farmy použitá v testech. */
-export const TEST_FARM = {
+const TEST_FARM = {
   name: 'SilentAgro',
   legalName: 'Silent Industries',
   companyId: '12345678',
@@ -476,7 +574,7 @@ export const TEST_DELIVERY_POLICY = {
   holdDays: 5,
 } as const
 
-export const TEST_BANK = {
+const TEST_BANK = {
   iban: Iban.of('CZ6508000000192000145399'),
   accountNumber: '2000145399/0800',
 }
@@ -487,10 +585,8 @@ export const TEST_BANK = {
  * Testy tak pořád ověřují obsah odeslané pošty, ale `ReserveOrder` zná jen port —
  * stub, který by jen zaznamenal „notifikace proběhla“, by nic užitečného netvrdil.
  */
-export function makeNotifier(mailer: Mailer, logger: Logger) {
-  return new MailOrderNotifier({
-    mailer,
-    logger,
+export function makeOrderMailComposer() {
+  return new TemplateOrderMailComposer({
     bank: TEST_BANK,
     farm: TEST_FARM,
     delivery: TEST_DELIVERY_POLICY,

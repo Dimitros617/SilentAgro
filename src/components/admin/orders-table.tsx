@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   advanceOrderStatusAction,
   cancelOrderAction,
@@ -36,43 +37,57 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
   [OrderStatus.COLLECTED]: 'status-btn',
 }
 
-function OrderRow({
-  initial,
-  onCancelRequest,
+function PaymentControl({
+  row,
+  pending,
+  onToggle,
 }: {
-  initial: OrderRowView
-  onCancelRequest: (order: OrderRowView, apply: (next: OrderRowView) => void) => void
-}) {
-  const [row, setRow] = useState(initial)
+  readonly row: OrderRowView
+  readonly pending: boolean
+  readonly onToggle: (paid: boolean) => void
+}): ReactNode {
+  if (row.isCancelled) return <span className="muted">—</span>
+  if (!row.requiresTransfer) return <span className="muted">hotově</span>
+  return (
+    <>
+      <label className="paid">
+        <input type="checkbox" checked={row.isPaid} disabled={pending} onChange={(event) => onToggle(event.target.checked)} />
+        <span>Zaplaceno</span>
+      </label>
+      {row.isPaid && row.paidAtLabel ? <small className="muted" style={{ display: 'block', marginTop: 2 }}>{row.paidAtLabel}</small> : null}
+    </>
+  )
+}
+
+function OrderRow({
+  row,
+  onCancelRequest,
+}: Readonly<{
+  row: OrderRowView
+  onCancelRequest: (order: OrderRowView) => void
+}>) {
   const [pending, setPending] = useState(false)
   const { show } = useToast()
 
   const advance = async () => {
     setPending(true)
     try {
-      const result = await advanceOrderStatusAction(row.id)
-      if (result.ok) setRow(result.value)
-      else show(result.error)
+      const result = await advanceOrderStatusAction(row.id, row.status)
+      if (!result.ok) show(result.error)
+    } catch {
+      show('Spojení se serverem se přerušilo. Obnovte přehled a ověřte výsledek.')
     } finally {
       setPending(false)
     }
   }
 
   const togglePaid = async (paid: boolean) => {
-    const previous = { isPaid: row.isPaid, paidAtLabel: row.paidAtLabel }
-    // Optimistické překreslení: zaškrtávátko musí reagovat hned, ale při chybě
-    // se vrátí zpět. Bez návratu by tvrdilo „zaplaceno“ i po neúspěšném zápisu
-    // a farmář by vydal brambory za nic.
-    setRow((current) => ({ ...current, isPaid: paid, paidAtLabel: paid ? '…' : null }))
-
     setPending(true)
     try {
       const result = await setOrderPaidAction(row.id, paid)
-      if (result.ok) setRow((current) => ({ ...current, ...result.value }))
-      else {
-        setRow((current) => ({ ...current, ...previous }))
-        show(result.error)
-      }
+      if (!result.ok) show(result.error)
+    } catch {
+      show('Spojení se serverem se přerušilo. Obnovte přehled a ověřte výsledek.')
     } finally {
       setPending(false)
     }
@@ -118,30 +133,7 @@ function OrderRow({
         {row.totalLabel}
       </span>
 
-      <div>
-        {row.isCancelled ? (
-          <span className="muted">—</span>
-        ) : row.requiresTransfer ? (
-          <>
-            <label className="paid">
-              <input
-                type="checkbox"
-                checked={row.isPaid}
-                disabled={pending}
-                onChange={(event) => void togglePaid(event.target.checked)}
-              />
-              <span>Zaplaceno</span>
-            </label>
-            {row.isPaid && row.paidAtLabel ? (
-              <small className="muted" style={{ display: 'block', marginTop: 2 }}>
-                {row.paidAtLabel}
-              </small>
-            ) : null}
-          </>
-        ) : (
-          <span className="muted">hotově</span>
-        )}
-      </div>
+      <div><PaymentControl row={row} pending={pending} onToggle={(paid) => void togglePaid(paid)} /></div>
 
       <div className="orders-row__actions">
         <button
@@ -158,7 +150,7 @@ function OrderRow({
           <button
             type="button"
             className="icon-btn icon-btn--danger"
-            onClick={() => onCancelRequest(row, setRow)}
+            onClick={() => onCancelRequest(row)}
             disabled={pending}
             // Jen ikona: se stavem „Připravena“ se dvě textová tlačítka do sloupce nevejdou.
             // Popisek nese `aria-label` pro odečítač a `title` pro myš.
@@ -173,12 +165,10 @@ function OrderRow({
   )
 }
 
-export function OrdersTable({ orders }: { orders: OrderRowView[] }) {
+export function OrdersTable({ orders }: Readonly<{ orders: OrderRowView[] }>) {
   const { show } = useToast()
-  const [target, setTarget] = useState<{
-    order: OrderRowView
-    apply: (next: OrderRowView) => void
-  } | null>(null)
+  const [targetId, setTargetId] = useState<number | null>(null)
+  const target = orders.find((order) => order.id === targetId) ?? null
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
@@ -188,15 +178,16 @@ export function OrdersTable({ orders }: { orders: OrderRowView[] }) {
     setPending(true)
     setError('')
     try {
-      const result = await cancelOrderAction(target.order.id, reason)
+      const result = await cancelOrderAction(target.id, reason)
       if (!result.ok) {
         setError(result.error)
         return
       }
 
-      target.apply(result.value)
-      setTarget(null)
-      show(`Rezervace ${result.value.code} zrušena, zákazník dostal e-mail`)
+      setTargetId(null)
+      show(`Rezervace ${result.value.code} zrušena`)
+    } catch {
+      show('Spojení se serverem se přerušilo. Obnovte přehled a ověřte výsledek.')
     } finally {
       setPending(false)
     }
@@ -216,22 +207,22 @@ export function OrdersTable({ orders }: { orders: OrderRowView[] }) {
         {orders.map((order) => (
           <OrderRow
             key={order.id}
-            initial={order}
-            onCancelRequest={(row, apply) => {
+            row={order}
+            onCancelRequest={(row) => {
               setError('')
-              setTarget({ order: row, apply })
+              setTargetId(row.id)
             }}
           />
         ))}
       </div>
 
       <CancelOrderDialog
-        order={target?.order ?? null}
+        order={target}
         pending={pending}
         error={error}
         onConfirm={(reason) => void confirm(reason)}
         onClose={() => {
-          if (!pending) setTarget(null)
+          if (!pending) setTargetId(null)
         }}
       />
     </>

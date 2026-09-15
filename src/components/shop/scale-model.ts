@@ -5,7 +5,7 @@
  */
 
 /** Rezervuje se po půl kile, takže jedno půlkilo = jedna brambora. */
-export const KG_PER_POTATO = 0.5
+const KG_PER_POTATO = 0.5
 
 /**
  * Strop na počet vykreslených brambor. Deset kilo je dvacet kusů; bez stropu by
@@ -85,7 +85,6 @@ export const TILT_DEGREES = 9
 
 /** Poloviční délka ramene a výška čepu v jednotkách SVG. */
 export const BEAM_HALF = 80
-export const BEAM_PIVOT_Y = 60
 
 /**
  * Svislý posun obou misek pro daný náklon ramene.

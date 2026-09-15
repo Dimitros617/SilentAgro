@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { ValidationError } from '@/domain/errors'
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 const ALLOWED = [
   { mime: 'image/jpeg', ext: 'jpg', magic: [0xff, 0xd8, 0xff] },

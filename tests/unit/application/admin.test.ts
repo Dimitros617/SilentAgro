@@ -42,6 +42,8 @@ const seedOrder = async (
     subtotal: Money.fromCzk(55),
     deliveryFee: Money.zero(),
     total: Money.fromCzk(55),
+    discount: Money.zero(),
+    pricingVersion: 1,
     userId: null,
     publicToken: 'token-1',
     createdAt: new Date('2026-09-10T12:00:00Z'),
@@ -53,14 +55,14 @@ describe('AdvanceOrderStatus', () => {
     await seedOrder(bundle)
     const useCase = new AdvanceOrderStatus({ uow: bundle.uow })
 
-    expect((await useCase.execute(1)).status).toBe(OrderStatus.READY)
-    expect((await useCase.execute(1)).status).toBe(OrderStatus.COLLECTED)
-    expect((await useCase.execute(1)).status).toBe(OrderStatus.NEW)
+    expect((await useCase.execute(1, OrderStatus.NEW)).status).toBe(OrderStatus.READY)
+    expect((await useCase.execute(1, OrderStatus.READY)).status).toBe(OrderStatus.COLLECTED)
+    expect((await useCase.execute(1, OrderStatus.COLLECTED)).status).toBe(OrderStatus.NEW)
   })
 
   it('u neexistující objednávky skončí chybou', async () => {
     const bundle = makeBundle()
-    await expect(new AdvanceOrderStatus({ uow: bundle.uow }).execute(999)).rejects.toThrow(
+    await expect(new AdvanceOrderStatus({ uow: bundle.uow }).execute(999, OrderStatus.NEW)).rejects.toThrow(
       NotFoundError,
     )
   })
@@ -70,7 +72,7 @@ describe('AdvanceOrderStatus', () => {
     await seedOrder(bundle)
     await bundle.orders.setPaid(1, new Date('2026-09-09T10:00:00Z'))
 
-    await new AdvanceOrderStatus({ uow: bundle.uow }).execute(1)
+    await new AdvanceOrderStatus({ uow: bundle.uow }).execute(1, OrderStatus.NEW)
     expect(bundle.orders.get(1)?.isPaid).toBe(true)
   })
 })
@@ -129,27 +131,28 @@ describe('ListOrders', () => {
     const bundle = makeBundle()
     await seedOrder(bundle, PaymentMethod.QR_CODE)
 
-    const rows = await new ListOrders({ uow: bundle.uow }).execute(10)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.code).toBe('#2610')
-    expect(rows[0]?.statusLabel).toBe('Nová')
-    expect(rows[0]?.requiresTransfer).toBe(true)
-    expect(rows[0]?.isPaid).toBe(false)
-    expect(rows[0]?.paidAtLabel).toBeNull()
+    const rows = await new ListOrders({ uow: bundle.uow }).execute({ pageSize: 10 })
+    expect(rows.items).toHaveLength(1)
+    expect(rows.items[0]?.code).toBe('#2610')
+    expect(rows.items[0]?.statusLabel).toBe('Nová')
+    expect(rows.items[0]?.requiresTransfer).toBe(true)
+    expect(rows.items[0]?.isPaid).toBe(false)
+    expect(rows.items[0]?.paidAtLabel).toBeNull()
   })
 
   it('u platby hotově neoznačuje objednávku jako čekající na převod', async () => {
     const bundle = makeBundle()
     await seedOrder(bundle, PaymentMethod.CASH)
 
-    const rows = await new ListOrders({ uow: bundle.uow }).execute(10)
-    expect(rows[0]?.requiresTransfer).toBe(false)
+    const rows = await new ListOrders({ uow: bundle.uow }).execute({ pageSize: 10 })
+    expect(rows.items[0]?.requiresTransfer).toBe(false)
   })
 })
 
 describe('UpsertVariety', () => {
   const input = {
     id: null,
+    expectedStockKg: 10,
     name: 'Růžová Adéla',
     tag: 'raná',
     description: 'Popis',

@@ -1,10 +1,14 @@
 .git
 .github
 node_modules
+dist
 .next
 coverage
+reports
+.scannerwork
 playwright-report
 test-results
+temp
 tests
 # Konfigurace Playwrightu importuje z tests/, takže musí odejít s nimi — jinak
 # v build kontextu zbude soubor s importem, který nemá na co ukazovat.

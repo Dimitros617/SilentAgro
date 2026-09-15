@@ -1,10 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
 import type { UserRowView } from '@/application/dto'
 
-function VerifiedBadge({ user }: { user: UserRowView }) {
+function VerifiedBadge({ user }: Readonly<{ user: UserRowView }>) {
   if (user.isVerified) {
     return (
       <span className="badge badge--green" title={`Ověřeno ${user.verifiedAtLabel ?? ''}`}>
@@ -15,22 +14,11 @@ function VerifiedBadge({ user }: { user: UserRowView }) {
   return <span className="badge badge--gold">Neověřen</span>
 }
 
-export function UsersTable({ users }: { users: UserRowView[] }) {
-  const [query, setQuery] = useState('')
-  const [onlyProblems, setOnlyProblems] = useState(false)
-
-  const filtered = users.filter((user) => {
-    if (onlyProblems && user.isVerified && user.isActive) return false
-    if (query.trim().length === 0) return true
-
-    const needle = query.trim().toLowerCase()
-    return user.name.toLowerCase().includes(needle) || user.email.includes(needle)
-  })
-
+export function UsersTable({ users }: Readonly<{ users: UserRowView[] }>) {
   if (users.length === 0) {
     return (
       <div className="card card--dashed">
-        <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Zatím se nikdo nezaregistroval</p>
+        <p style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Žádní uživatelé neodpovídají výběru</p>
         <p className="muted" style={{ marginTop: 8 }}>
           Objednávat jde i bez účtu, takže seznam může chvíli zůstat prázdný.
         </p>
@@ -40,35 +28,13 @@ export function UsersTable({ users }: { users: UserRowView[] }) {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <div className="row" style={{ gap: 12 }}>
-        <input
-          className="input"
-          style={{ maxWidth: 320 }}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Hledat podle jména nebo e-mailu"
-          aria-label="Hledat uživatele"
-        />
-        <label className="paid">
-          <input
-            type="checkbox"
-            checked={onlyProblems}
-            onChange={(event) => setOnlyProblems(event.target.checked)}
-          />
-          <span>Jen neověření a deaktivovaní</span>
-        </label>
-        <span className="muted">
-          {filtered.length} z {users.length}
-        </span>
-      </div>
-
       <div className="card card--flush">
-        {filtered.length === 0 ? (
+        {users.length === 0 ? (
           <p className="muted" style={{ padding: '20px 0' }}>
             Nic neodpovídá.
           </p>
         ) : (
-          filtered.map((user) => (
+          users.map((user) => (
             <div key={user.id} className="users-row">
               <div>
                 <Link href={`/admin/uzivatele/${user.id}`} style={{ fontWeight: 600 }}>

@@ -68,8 +68,8 @@ model User {
   deactivatedAt DateTime? @map("deactivated_at")
 
   // Tokeny vydané dřív než v tenhle okamžik neplatí. Zapisuje ho obnova hesla
-  // farmáře (prisma/seed.ts) — jediná cesta, jak odvolat živou administrátorskou
-  // session, protože token je podepsaný na sedm dní a sám o sobě zneplatnit nejde.
+  // farmáře (prisma/ensure-farmer.ts) i deaktivace účtu. Čtení session porovnává
+  // tento údaj s okamžikem vydání tokenu.
   // NULL = nic se neodvolávalo.
   sessionsInvalidBefore DateTime? @map("sessions_invalid_before")
 
@@ -118,6 +118,9 @@ model Order {
   subtotalCzk    Decimal        @map("subtotal_czk") @db.Decimal(10, 2)
   deliveryFeeCzk Decimal        @map("delivery_fee_czk") @db.Decimal(10, 2)
   totalCzk       Decimal        @map("total_czk") @db.Decimal(10, 2)
+  // Historicky účtovaná sleva a verze výpočtu. Při čtení se částky nepřepočítávají.
+  discountCzk    Decimal        @default(0) @map("discount_czk") @db.Decimal(10, 2)
+  pricingVersion Int           @default(1) @map("pricing_version")
   status         OrderStatus    @default(NEW)
 
   // Kdy farmář platbu odškrtl. NULL = nezaplaceno. Datum místo booleovské hodnoty:
@@ -135,12 +138,41 @@ model Order {
 
   user  User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   items OrderItem[]
+  reservationRequest ReservationRequest?
 
   @@index([status, createdAt])
   @@index([paidAt])
   @@index([createdAt])
   @@index([cancelledAt])
   @@map("orders")
+}
+
+// Klíč jednoho zákaznického pokusu. Vzniká a dokončuje se spolu s rezervací.
+model ReservationRequest {
+  key         String   @id @map("request_key") @db.VarChar(64)
+  fingerprint String   @db.Char(64)
+  orderId     Int?     @unique @map("order_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("reservation_requests")
+}
+
+// Jedna zpráva pro jednoho příjemce. Úspěšný příjemce se při chybě druhého neopakuje.
+model MailOutbox {
+  id          Int       @id @default(autoincrement())
+  messageKey  String    @unique @map("message_key") @db.VarChar(160)
+  payload     Json
+  attempts    Int       @default(0)
+  availableAt DateTime  @default(now()) @map("available_at")
+  lockedUntil DateTime? @map("locked_until")
+  leaseToken  String?   @map("lease_token") @db.VarChar(64)
+  sentAt      DateTime? @map("sent_at")
+  lastError   String?   @map("last_error") @db.VarChar(1000)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([sentAt, availableAt, lockedUntil])
+  @@map("mail_outbox")
 }
 
 model OrderItem {
@@ -182,6 +214,8 @@ model NewsPost {
 model Field {
   id          Int         @id @default(autoincrement())
   name        String      @db.VarChar(120)
+  // Popis osázení, i mimo prodejní katalog (např. "Sadba 2027"). Nepoužívá se
+  // k dohledání odrůdy ani k pohybu skladu. Případná budoucí vazba vyžaduje varietyId.
   varietyName String      @map("variety_name") @db.VarChar(120)
   areaM2      Int         @map("area_m2")
   status      FieldStatus

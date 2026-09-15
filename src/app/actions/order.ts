@@ -15,6 +15,7 @@ import { toResultError } from './errors'
  * cenu, název odrůdy ani stav skladu klient neposílá a poslat je nemůže.
  */
 const payloadSchema = z.object({
+  requestKey: z.uuid(),
   customer: z.object({
     name: z.string().min(1, 'Vyplňte jméno a příjmení').max(120, 'Jméno je příliš dlouhé'),
     email: z.string().min(1, 'Vyplňte e-mail').max(255, 'E-mail je příliš dlouhý'),
@@ -34,7 +35,6 @@ const payloadSchema = z.object({
     .max(50),
 })
 
-export type ReserveOrderPayload = z.input<typeof payloadSchema>
 
 export async function reserveOrderAction(
   payload: unknown,
@@ -63,9 +63,10 @@ export async function reserveOrderAction(
       uow: container.uow,
       clock: container.clock,
       tokenGenerator: container.tokenGenerator,
-      notifier: container.notifier,
+      composer: container.orderMailComposer,
       deliveryPolicy: container.delivery,
     }).execute({
+      requestKey: parsed.data.requestKey,
       customer: parsed.data.customer,
       delivery: parsed.data.delivery,
       payment: parsed.data.payment,

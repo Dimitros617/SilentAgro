@@ -12,20 +12,22 @@ export class GetOrderByToken {
     const order = await this.deps.uow.repos.orders.findByPublicToken(token)
     if (!order) throw new NotFoundError('Rezervace')
 
-    // Náhled se skládá z týchž šablon, které zprávy skutečně odeslaly. Kdyby se text
-    // na stránce formuloval podruhé, časem by se s e-mailem rozešel.
+    // Náhled sdílí aktuální šablony s přípravou pošty. Stav doručení tím neověřujeme.
     const [payment, mails] = await Promise.all([
-      this.deps.presenter.paymentInstructionFor(order),
-      this.deps.presenter.sentMailPreviews(order),
+      order.isCancelled ? null : this.deps.presenter.paymentInstructionFor(order),
+      order.isCancelled ? [] : this.deps.presenter.mailPreviews(order),
     ])
 
     return {
+      isCancelled: order.isCancelled,
+      cancellationReason: order.cancellationReason,
       code: order.code,
       createdAtLabel: formatDateTimeCs(order.createdAt),
       customerName: order.customer.name,
       customerEmail: order.customer.email.value,
       itemsLabel: order.itemsLabel,
       lines: order.items.map((item) => ({
+        varietyId: item.varietyId,
         varietyName: item.varietyName,
         quantityLabel: formatKg(item.quantity),
         unitPriceLabel: `${formatCzkPerKg(item.unitPrice)}/kg`,
@@ -33,6 +35,7 @@ export class GetOrderByToken {
       })),
       totalKgLabel: formatKg(order.totalKg),
       subtotalLabel: formatCzkPerKg(order.subtotal),
+      discountLabel: order.discount.isZero() ? null : formatCzkPerKg(order.discount),
       deliveryFeeLabel: order.deliveryFee.isZero() ? 'zdarma' : formatCzkPerKg(order.deliveryFee),
       totalLabel: formatCzkPerKg(order.total),
       deliveryLabel: DELIVERY_LABELS[order.delivery],

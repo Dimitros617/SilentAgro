@@ -89,13 +89,3 @@ export const FIELD_STATUS_LABELS: Record<FieldStatus, string> = {
 /** Platba, u které zákazník posílá peníze předem a potřebuje číslo účtu a QR kód. */
 export const requiresTransfer = (payment: PaymentMethod): boolean =>
   payment === PaymentMethod.BANK_TRANSFER || payment === PaymentMethod.QR_CODE
-
-const isKeyOf = <T extends Record<string, string>>(record: T, value: string): value is T[keyof T] =>
-  Object.prototype.hasOwnProperty.call(record, value)
-
-/** Bezpečný převod hodnoty z formuláře na výčet; neznámá hodnota spadne na `fallback`. */
-export const parseEnum = <T extends Record<string, string>>(
-  record: T,
-  value: unknown,
-  fallback: T[keyof T],
-): T[keyof T] => (typeof value === 'string' && isKeyOf(record, value) ? value : fallback)

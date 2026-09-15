@@ -1,9 +1,8 @@
 /*
  * Jeden stylový soubor místo scoped CSS u každé komponenty.
  *
- * Prototyp měl styly inline v atributech `style`. To se sem nepřeneslo: inline styly
- * se nedají sdílet, vynucují `'unsafe-inline'` i pro CSP stylů a duplikují se v každé
- * instanci komponenty. Třídy tady drží stejnou vizuální podobu, ale na jednom místě.
+ * Sdílené rozvržení a vzhled komponent držíme v pojmenovaných sekcích níže.
+ * Komponenty používají inline styly pro hodnoty z dat a drobné místní rozestupy.
  */
 
 /* ---------- rozvržení ---------- */
@@ -723,7 +722,7 @@
   top: 96px;
   padding: 18px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 

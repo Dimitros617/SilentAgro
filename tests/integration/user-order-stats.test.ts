@@ -73,6 +73,29 @@ afterAll(async () => {
 })
 
 describe('orderStats proti skutečné databázi', () => {
+  it('cílený dotaz vrací stejná data jako seznam a nezahrne objednávky jiného účtu', async () => {
+    const userId = await seedUser('jan@email.cz')
+    const otherId = await seedUser('petr@email.cz')
+    await seedOrder({ email: 'jan@email.cz', totalCzk: 100, createdAt: REGISTERED_AT, userId })
+    await seedOrder({ email: 'jan@email.cz', totalCzk: 250, createdAt: AFTER_REGISTRATION, userId, cancelledAt: AFTER_REGISTRATION })
+    await seedOrder({ email: 'petr@email.cz', totalCzk: 999, createdAt: REGISTERED_AT, userId: otherId })
+
+    const stats = await testUow.repos.users.orderStatsForUser(userId)
+    expect(stats).toEqual(await statsFor(userId))
+    expect(stats?.orderCount).toBe(2)
+    expect(stats?.cancelledCount).toBe(1)
+    expect(stats?.totalSpent.czk).toBe(100)
+  })
+
+  it('cílený dotaz rozliší účet bez objednávek a neexistující účet', async () => {
+    const userId = await seedUser('jan@email.cz')
+    const stats = await testUow.repos.users.orderStatsForUser(userId)
+    expect(stats?.orderCount).toBe(0)
+    expect(stats?.totalSpent.czk).toBe(0)
+    expect(stats?.lastOrderAt).toBeNull()
+    expect(await testUow.repos.users.orderStatsForUser(userId + 1)).toBeNull()
+  })
+
   it('počítá jen objednávky přiřazené k účtu', async () => {
     // hostovskou objednávku na cizí adresu zadá kdokoli; kdyby se párovala přes
     // e-mail, nafoukla by cizímu účtu počet objednávek i útratu

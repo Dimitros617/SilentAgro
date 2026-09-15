@@ -3,12 +3,13 @@ import type { UserRole } from '@/domain/enums'
 /** Inline příloha e-mailu. S vyplněným `cid` na ni HTML odkazuje jako `cid:<hodnota>`. */
 export interface MailAttachment {
   readonly filename: string
-  readonly content: Buffer
+  readonly content: Uint8Array
   readonly contentType: string
   readonly cid?: string
 }
 
 export interface MailMessage {
+  readonly messageId?: string
   readonly to: string
   readonly subject: string
   readonly text: string
@@ -76,7 +77,7 @@ export interface PaymentInstruction {
   readonly qrDataUrl: string | null
 }
 
-export interface SentMailPreview {
+export interface OrderMailPreview {
   readonly kind: string
   readonly to: string
   readonly subject: string

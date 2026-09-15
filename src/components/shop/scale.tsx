@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCart } from '@/components/cart/cart-provider'
 import {
-  BEAM_PIVOT_Y,
   MAX_POTATOES,
   panShift,
   potatoCount,
@@ -12,6 +11,8 @@ import {
   visiblePotatoes,
   weightCount,
 } from './scale-model'
+
+const BEAM_PIVOT_Y = 60
 
 /**
  * Obrys pytle. Používá se třikrát — jako plátno, jako ořez pro brambory a nakonec
@@ -26,7 +27,7 @@ const TILT_STEP_MS = 320
 const DROP_STAGGER_MS = 60
 const LEAVE_MS = 520
 
-function Potato({ index, delayMs, leaving }: { index: number; delayMs: number; leaving: boolean }) {
+function Potato({ index, delayMs, leaving }: Readonly<{ index: number; delayMs: number; leaving: boolean }>) {
   const { x, y, rotate, scale } = potatoPlacement(index)
 
   return (

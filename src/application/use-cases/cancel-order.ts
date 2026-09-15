@@ -1,9 +1,9 @@
 import type { OrderRowView } from '@/application/dto'
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
-import type { OrderNotifier } from '@/domain/ports/order-presentation'
+import type { OrderMailComposer } from '@/domain/ports/order-delivery'
 import type { Clock } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
-import { toOrderRow } from '@/application/use-cases/admin'
+import { toOrderRow } from '@/application/view-models'
 
 const MIN_REASON_LENGTH = 3
 const MAX_REASON_LENGTH = 1000
@@ -11,7 +11,7 @@ const MAX_REASON_LENGTH = 1000
 export interface CancelOrderDeps {
   readonly uow: UnitOfWork
   readonly clock: Clock
-  readonly notifier: OrderNotifier
+  readonly composer: OrderMailComposer
 }
 
 /**
@@ -35,7 +35,7 @@ export class CancelOrder {
     }
 
     const cancelled = await this.deps.uow.runInTransaction(async (repos) => {
-      const order = await repos.orders.findById(orderId)
+      const order = await repos.orders.lockForUpdate(orderId)
       if (!order) throw new NotFoundError('Objednávka')
       if (order.isCancelled) throw new ConflictError('Objednávka už je zrušená')
 
@@ -47,9 +47,8 @@ export class CancelOrder {
 
       for (const item of order.items) {
         const variety = byId.get(item.varietyId)
-        // Odrůda existovat musí — cizí klíč je RESTRICT. Kdyby přesto chyběla,
-        // zrušení nesmí spadnout: objednávku je potřeba zrušit tak jako tak.
-        if (!variety) continue
+        // Chybějící vazba je poškození dat. Transakce nesmí potichu ztratit sklad.
+        if (!variety) throw new NotFoundError('Odrůda objednávky')
         byId.set(item.varietyId, variety.restock(item.quantity))
       }
 
@@ -59,11 +58,10 @@ export class CancelOrder {
 
       // `cancel` mění jen řádky, které ještě zrušené nejsou — druhá pojistka
       // proti dvojímu vrácení skladu, tentokrát na úrovni databáze.
-      return repos.orders.cancel(orderId, this.deps.clock.now(), trimmed)
+      const updated = await repos.orders.cancel(orderId, this.deps.clock.now(), trimmed)
+      await repos.outbox.enqueue(`order:${orderId}:cancelled`, this.deps.composer.orderCancelled(updated, trimmed))
+      return updated
     })
-
-    // Až po commitu; výpadek SMTP nesmí zrušení vrátit zpět.
-    await this.deps.notifier.notifyOrderCancelled(cancelled, trimmed)
 
     return toOrderRow(cancelled)
   }

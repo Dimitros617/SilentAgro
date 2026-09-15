@@ -1,7 +1,7 @@
-# Dvoukontejnerová sestava: aplikace a MySQL, propojené přímo po interní síti.
+# Aplikace, mail worker a MySQL, propojené přímo po interní síti.
 #
 # `migrator` je jednorázový kontejner — nasadí migrace a skončí, takže ustálený stav
-# jsou opravdu jen dvě běžící služby. Migrace nejde spustit z runtime image: `output:
+# jsou tři běžící služby. Migrace nejde spustit z runtime image: `output:
 # 'standalone'` v něm nenechá `prisma` CLI a `read_only` rootfs by nedovolil `npx`
 # stáhnout ho za běhu.
 #
@@ -58,7 +58,7 @@ services:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
-    environment:
+    environment: &app-environment
       <<: *db-url
       # Vlastní klíč, ne NODE_ENV: standalone server si NODE_ENV nastavuje natvrdo
       # na "production", takže by se podle něj nedala rozlišit vývojová sestava.
@@ -103,8 +103,27 @@ services:
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
 
+  mail-worker:
+    build:
+      context: .
+      target: runner
+    command: ['node', 'mail-worker.cjs']
+    environment: *app-environment
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    networks: [internal]
+    read_only: true
+    tmpfs: ['/tmp:size=64m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      disable: true
+    stop_grace_period: 40s
+
   # Volitelné: `docker compose --profile mail up -d` přidá odchytávač pošty.
-  # Bez profilu běží přesně dvě služby. UI na http://localhost:${MAILPIT_UI_PORT}
+  # Volitelná schránka pro vývoj. UI na http://localhost:${MAILPIT_UI_PORT}
   mailpit:
     image: axllent/mailpit:latest
     profiles: [mail]

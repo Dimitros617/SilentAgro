@@ -37,20 +37,22 @@ import { Money } from '@/domain/value-objects/money'
  * než spoléhat na to, který z nich zrovna přijde.
  */
 export const decimalToNumber = (value: unknown): number => {
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') return Number.parseFloat(value)
-  if (value !== null && typeof value === 'object' && 'toString' in value) {
-    return Number.parseFloat(String(value))
+  if (value === null || value === undefined || typeof value === 'boolean') {
+    throw new Error('Databáze vrátila neplatné číslo')
   }
-  return 0
+  const text = String(value).trim()
+  const number = Number(text)
+  if (text.length === 0 || !Number.isFinite(number)) {
+    throw new Error('Databáze vrátila neplatné číslo')
+  }
+  return number
 }
 
 /**
- * Množství uložené v databázi se zaokrouhlí na půlkilo. `Kilograms.of` je přísné
- * a data z DECIMAL(10,2) mohou nést setiny (například po ruční opravě v databázi);
- * pád aplikace kvůli tomu by byl horší než tiché zaokrouhlení na nejbližší platnou hodnotu.
+ * Uložené množství musí splňovat stejná pravidla jako rezervace. Poškozená data
+ * se nesmí tiše zaokrouhlit nebo zaměnit za nulu.
  */
-const toKilograms = (value: unknown): Kilograms => Kilograms.parse(decimalToNumber(value))
+const toKilograms = (value: unknown): Kilograms => Kilograms.of(decimalToNumber(value))
 
 const toMoney = (value: unknown): Money => Money.fromCzk(decimalToNumber(value))
 
@@ -99,12 +101,13 @@ export const rawToVariety = (row: RawVarietyRow): Variety =>
     isActive: Boolean(row.is_active),
   })
 
-export const toOrderItem = (row: OrderItemRow): OrderItem =>
-  OrderItem.create({
+const toOrderItem = (row: OrderItemRow): OrderItem =>
+  OrderItem.rehydrate({
     varietyId: row.varietyId,
     varietyName: row.varietyName,
     unitPrice: toMoney(row.unitPriceCzk),
     quantity: toKilograms(row.quantityKg),
+    lineTotal: toMoney(row.lineTotalCzk),
   })
 
 export const toOrder = (row: OrderRow & { items: OrderItemRow[] }): Order =>
@@ -121,6 +124,10 @@ export const toOrder = (row: OrderRow & { items: OrderItemRow[] }): Order =>
     items: row.items.map(toOrderItem),
     delivery: row.deliveryMethod as DeliveryMethod,
     deliveryFee: toMoney(row.deliveryFeeCzk),
+    subtotal: toMoney(row.subtotalCzk),
+    discount: toMoney(row.discountCzk),
+    total: toMoney(row.totalCzk),
+    pricingVersion: row.pricingVersion,
     payment: row.paymentMethod as PaymentMethod,
     status: row.status as OrderStatus,
     paidAt: row.paidAt,

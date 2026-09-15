@@ -25,10 +25,9 @@ export default defineConfig({
           include: ['tests/integration/**/*.test.ts'],
           environment: 'node',
           // Integrační testy sdílejí jednu databázi a mažou tabulky mezi běhy, takže
-          // musí běžet po jednom souboru. `fileParallelism` je ve Vitestu 3 jen
-          // kořenová volba; uvnitř projektu se serializace zařídí jedním forkem.
+          // musí běžet po jednom souboru. Vitest 4 nabízí serializaci přímo projektem.
           pool: 'forks',
-          poolOptions: { forks: { singleFork: true } },
+          fileParallelism: false,
           testTimeout: 30_000,
           hookTimeout: 30_000,
         },

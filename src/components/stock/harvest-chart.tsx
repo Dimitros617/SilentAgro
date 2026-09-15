@@ -10,15 +10,15 @@ const HEADROOM = 1.15
  * bez knihovny a bez klientského JavaScriptu — data se během prohlížení stránky nemění,
  * takže by knihovna přidala jen kilobajty a další vrstvu, která může selhat.
  */
-export function HarvestChart({ points, height = HEIGHT }: { points: HarvestPointView[]; height?: number }) {
+export function HarvestChart({ points, height = HEIGHT }: Readonly<{ points: HarvestPointView[]; height?: number }>) {
   if (points.length === 0) {
     return <p className="muted">Zatím není co vykreslit.</p>
   }
 
-  const maxStock = Math.max(...points.map((point) => point.stockKg), 1)
-  const tickTop = Math.max(100, Math.ceil(maxStock / 100) * 100)
+  const maxValue = Math.max(...points.map((point) => Math.max(point.stockKg, point.dugKg)), 1)
+  const tickTop = Math.max(100, Math.ceil((maxValue * HEADROOM) / 100) * 100)
   const step = WIDTH / points.length
-  const y = (value: number) => HEIGHT - (value / (maxStock * HEADROOM)) * HEIGHT
+  const y = (value: number) => HEIGHT - (value / tickTop) * HEIGHT
 
   const bars = points.map((point, index) => ({
     key: point.dateLabel,

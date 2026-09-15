@@ -3,11 +3,12 @@ import { DELIVERY_LABELS, PAYMENT_LABELS, requiresTransfer } from '@/domain/enum
 import type { DeliveryPolicy, FarmIdentity, MailAttachment, MailMessage } from '@/domain/ports/services'
 import type { PaymentDetails } from '@/infrastructure/payment/spayd'
 import { formatCzkPerKg, formatKg } from '@/shared/format'
+import { VERIFICATION_TTL_HOURS } from '@/application/verification-policy'
 
-export const QR_CONTENT_ID = 'qr@silentagro'
+const QR_CONTENT_ID = 'qr@silentagro'
 
 /** `SilentAgro by Silent Industries · +420 777 123 456` — jeden podpis pro všechny zprávy. */
-export const farmSignature = (farm: FarmIdentity): string =>
+const farmSignature = (farm: FarmIdentity): string =>
   [`${farm.name} by ${farm.legalName}`, farm.phone].filter((part) => part.length > 0).join(' · ')
 
 /** Text od zákazníka jde do HTML e-mailu, takže se escapuje. */
@@ -39,15 +40,17 @@ const paymentTextBlock = (payment: PaymentDetails, hasQr: boolean): string =>
     `  Zpráva pro příjemce: ${payment.recipientMessage}`,
     '',
     payment.instruction,
-    hasQr ? '' : '',
+    '',
     hasQr ? 'QR kód pro platbu najdete v příloze tohoto e-mailu.' : '',
   ]
-    .filter((line) => line !== undefined)
     .join('\n')
 
 export function renderCustomerConfirmation(input: CustomerConfirmationInput): MailMessage {
   const { order, farm, delivery, confirmationUrl, payment, qrPng } = input
   const hasQr = payment !== null && qrPng !== null
+  const qrImage = payment !== null && qrPng !== null
+    ? `<img src="cid:${QR_CONTENT_ID}" alt="QR kód pro platbu ${escapeHtml(payment.amountLabel)}" width="220" height="220" style="display:block;margin-top:12px" />`
+    : ''
 
   const text = [
     `Dobrý den, ${order.customer.name},`,
@@ -77,7 +80,7 @@ export function renderCustomerConfirmation(input: CustomerConfirmationInput): Ma
         <tr><td style="padding-right:16px;color:#6f7a72">Zpráva pro příjemce</td><td><strong>${escapeHtml(payment.recipientMessage)}</strong></td></tr>
       </table>
       <p style="font-size:14px;line-height:1.6;color:#4a5750">${escapeHtml(payment.instruction)}</p>
-      ${hasQr ? `<img src="cid:${QR_CONTENT_ID}" alt="QR kód pro platbu ${escapeHtml(payment.amountLabel)}" width="220" height="220" style="display:block;margin-top:12px" />` : ''}
+      ${qrImage}
     `
     : ''
 
@@ -125,10 +128,13 @@ export interface FarmerNotificationInput {
 }
 
 export function renderFarmerNotification(input: FarmerNotificationInput): MailMessage {
-  const { order, farm, farmerEmail, adminUrl } = input
+  const { order, farmerEmail, adminUrl } = input
+  const customerContact = order.customer.phone
+    ? `${order.customer.name} · ${order.customer.email.value} · ${order.customer.phone}`
+    : `${order.customer.name} · ${order.customer.email.value}`
 
   const text = [
-    `${order.customer.name} · ${order.customer.email.value}${order.customer.phone ? ` · ${order.customer.phone}` : ''}`,
+    customerContact,
     order.itemsLabel,
     `${DELIVERY_LABELS[order.delivery]} · ${PAYMENT_LABELS[order.payment]}`,
     `Celkem ${formatCzkPerKg(order.total)}`,
@@ -216,7 +222,7 @@ export function renderVerification(farm: FarmIdentity, name: string, to: string,
     'potvrďte prosím svůj e-mail otevřením odkazu:',
     verificationUrl,
     '',
-    'Odkaz platí 48 hodin. Pokud jste si účet u nás nezakládali, zprávu ignorujte.',
+    `Odkaz platí ${VERIFICATION_TTL_HOURS} hodin. Pokud jste si účet u nás nezakládali, zprávu ignorujte.`,
     '',
     farmSignature(farm),
   ].join('\n')
@@ -230,7 +236,7 @@ export function renderVerification(farm: FarmIdentity, name: string, to: string,
         <p style="font-size:15px;line-height:1.6">Dobrý den, ${escapeHtml(name)},</p>
         <p style="font-size:15px;line-height:1.6">potvrďte prosím svůj e-mail:</p>
         <p><a href="${escapeHtml(verificationUrl)}" style="display:inline-block;padding:12px 20px;background:#1f6f4a;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">Potvrdit e-mail</a></p>
-        <p style="font-size:13px;color:#6f7a72">Odkaz platí 48 hodin. Pokud jste si účet nezakládali, zprávu ignorujte.</p>
+        <p style="font-size:13px;color:#6f7a72">Odkaz platí ${VERIFICATION_TTL_HOURS} hodin. Pokud jste si účet nezakládali, zprávu ignorujte.</p>
         <p style="font-size:13px;color:#6f7a72">${escapeHtml(farmSignature(farm))}</p>
       </div>
     `,

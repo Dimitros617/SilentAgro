@@ -26,12 +26,12 @@ const PUBLIC_NAV = [
 const ADMIN_NAV = { href: '/admin', label: 'Administrace' } as const
 
 /** Vlastní komponenta, protože `useSearchParams` vyžaduje Suspense hranici. */
-function AuthPrompt({ onOpen }: { onOpen: () => void }) {
+function AuthPrompt({ onOpen }: Readonly<{ onOpen: () => void }>) {
   useAuthPrompt(onOpen)
   return null
 }
 
-export function SiteHeader({ farm, session }: { farm: HeaderFarm; session: HeaderSession | null }) {
+export function SiteHeader({ farm, session }: Readonly<{ farm: HeaderFarm; session: HeaderSession | null }>) {
   const pathname = usePathname()
   const { count } = useCart()
   const [authOpen, setAuthOpen] = useState(false)

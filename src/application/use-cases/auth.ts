@@ -12,7 +12,7 @@ import type {
 } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { EmailAddress } from '@/domain/value-objects/email-address'
-import { verificationExpiry } from '@/application/use-cases/users'
+import { verificationExpiry } from '@/application/verification-policy'
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -67,6 +67,8 @@ export class RegisterUser {
 
     const now = this.deps.clock.now()
     const verificationToken = this.deps.tokenGenerator.publicToken()
+    // Výpočet hashe nepotřebuje otevřenou databázovou transakci.
+    const passwordHash = await this.deps.hasher.hash(input.password)
 
     const user = await this.deps.uow.runInTransaction(async (repos) => {
       const existing = await repos.users.findByEmail(email)
@@ -75,7 +77,7 @@ export class RegisterUser {
       return repos.users.create({
         email,
         name,
-        passwordHash: await this.deps.hasher.hash(input.password),
+        passwordHash,
         role: UserRole.CUSTOMER,
         createdAt: now,
         verificationToken,
@@ -141,23 +143,32 @@ export class LoginUser {
 }
 
 /**
- * Pustí dál jen session, která pořád patří aktivnímu farmáři.
+ * Pustí dál jen session, která pořád patří aktivnímu účtu.
  *
  * Rozhoduje databáze, ne token: token je podepsaný na sedm dní, takže odebraná role,
  * deaktivace ani obnova hesla by se do něj zpětně nepromítly. Tohle je ta druhá
  * polovina — první je podpis, který ověří middleware na Edge, kam se na databázi
  * dosáhnout nedá.
  */
-export class AuthorizeFarmerSession {
+export class AuthorizeSession {
   constructor(private readonly deps: { uow: UnitOfWork }) {}
 
   async execute(session: VerifiedSession): Promise<AuthResult | null> {
     const user = await this.deps.uow.repos.users.findById(session.userId)
     if (!user) return null
-    if (user.role !== UserRole.FARMER) return null
     if (!user.isActive) return null
     if (!user.acceptsTokenIssuedAt(session.issuedAt)) return null
 
     return toAuthResult(user)
+  }
+}
+
+export class AuthorizeFarmerSession {
+  constructor(private readonly deps: { uow: UnitOfWork }) {}
+
+  async execute(session: VerifiedSession): Promise<AuthResult | null> {
+    const user = await new AuthorizeSession(this.deps).execute(session)
+    if (!user || user.role !== UserRole.FARMER) return null
+    return user
   }
 }

@@ -1,0 +1,8 @@
+{
+  "minTokens": 50,
+  "minLines": 5,
+  "mode": "mild",
+  "ignorePattern": ["migrations"],
+  "reporters": ["json", "html"],
+  "output": "reports/quality/duplicates"
+}

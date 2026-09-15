@@ -19,7 +19,7 @@ const initialState: Result<AuthResult, string> | null = null
  * viditelnou plochu. `<dialog>` se vykresluje v top layer, kde na containing block
  * nenarazí, a navíc sám drží fokus a zavírá se Escapem.
  */
-export function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AuthModal({ open, onClose }: Readonly<{ open: boolean; onClose: () => void }>) {
   const [mode, setMode] = useState<Mode>('login')
   const dialogRef = useRef<HTMLDialogElement>(null)
   const router = useRouter()
@@ -28,6 +28,9 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     mode === 'login' ? loginAction : registerAction,
     initialState,
   )
+  let submitLabel = 'Přihlásit se'
+  if (mode === 'register') submitLabel = 'Vytvořit účet'
+  if (pending) submitLabel = 'Pracuji…'
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -57,7 +60,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
       onClick={(event) => {
         // Kliknutí do ztmavení hlásí jako cíl samotný dialog; kliknutí dovnitř
         // obsahu hlásí vnořený prvek.
-        if (event.target === dialogRef.current) onClose()
+        if (event.target === event.currentTarget) onClose()
       }}
     >
       <div className="modal__content">
@@ -127,7 +130,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
           ) : null}
 
           <button type="submit" className="btn btn--dark btn--block btn--lg" disabled={pending}>
-            {pending ? 'Pracuji…' : mode === 'register' ? 'Vytvořit účet' : 'Přihlásit se'}
+            {submitLabel}
           </button>
 
           <button type="button" className="btn btn--danger" onClick={onClose}>

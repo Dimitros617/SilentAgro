@@ -22,7 +22,7 @@ const CONFIRM_URL = 'https://silentagro.cz/rezervace/abc123'
 const ADMIN_URL = 'https://silentagro.cz/admin/objednavky'
 
 const makeOrder = (payment: PaymentMethod, note = 'Přijedu v sobotu dopoledne') =>
-  Order.rehydrate({
+  Order.create({
     id: 1,
     code: '#2610',
     publicToken: 'abc123',

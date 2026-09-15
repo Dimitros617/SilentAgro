@@ -34,6 +34,8 @@ export const testUow = new PrismaUnitOfWork(testPrisma)
  * Mazání ve správném pořadí je spolehlivé bez ohledu na to, kudy dotaz poteče.
  */
 const DELETE_ORDER = [
+  'mail_outbox',
+  'reservation_requests',
   'order_items',
   'orders',
   'news_posts',

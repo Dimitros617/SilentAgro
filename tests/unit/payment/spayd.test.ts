@@ -22,7 +22,7 @@ const base = {
 }
 
 const orderWith = (payment: PaymentMethod, kg = 2.5, czkPerKg = 22) =>
-  Order.rehydrate({
+  Order.create({
     id: 1,
     code: '#2610',
     publicToken: 'token'.repeat(6),

@@ -1,5 +1,6 @@
 import type { OrderRowView, UserDetailView, UserRowView } from '@/application/dto'
-import { toOrderRow } from '@/application/use-cases/admin'
+import { toOrderRow, toUserRow } from '@/application/view-models'
+import { verificationExpiry } from '@/application/verification-policy'
 import { UserRole } from '@/domain/enums'
 import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
 import type { UserNotifier } from '@/domain/ports/order-presentation'
@@ -7,14 +8,9 @@ import type { Clock, TokenGenerator } from '@/domain/ports/services'
 import type { RepositoryBundle } from '@/domain/ports/repositories'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import type { User } from '@/domain/entities'
-import { formatCzk, formatDateCs, formatDateTimeCs } from '@/shared/format'
-import { Money } from '@/domain/value-objects/money'
-
-/** Jak dlouho platí odkaz z ověřovacího e-mailu. */
-export const VERIFICATION_TTL_HOURS = 48
-
-export const verificationExpiry = (now: Date): Date =>
-  new Date(now.getTime() + VERIFICATION_TTL_HOURS * 3600 * 1000)
+import type { Page, PageRequest, UserFilter } from '@/domain/ports/pagination'
+import { clampPage, normalizePage } from '@/application/pagination'
+import { normalizeListText } from '@/application/list-query'
 
 /**
  * Ověřený účet si připíše hostovské objednávky na svou adresu z doby před registrací.
@@ -31,60 +27,51 @@ export const verificationExpiry = (now: Date): Date =>
 const claimGuestOrders = (repos: RepositoryBundle, user: User): Promise<number> =>
   repos.orders.claimGuestOrders(user.id, user.email, user.createdAt)
 
-const toUserRow = (
-  user: User,
-  stats: { orderCount: number; cancelledCount: number; totalSpent: Money; lastOrderAt: Date | null } | undefined,
-): UserRowView => ({
-  id: user.id,
-  name: user.name,
-  email: user.email.value,
-  role: user.role,
-  isFarmer: user.role === UserRole.FARMER,
-  isVerified: user.isVerified,
-  verifiedAtLabel: user.verifiedAt ? formatDateCs(user.verifiedAt) : null,
-  isActive: user.isActive,
-  deactivatedAtLabel: user.deactivatedAt ? formatDateCs(user.deactivatedAt) : null,
-  registeredAtLabel: formatDateCs(user.createdAt),
-  orderCount: stats?.orderCount ?? 0,
-  cancelledCount: stats?.cancelledCount ?? 0,
-  totalSpentLabel: formatCzk(stats?.totalSpent ?? Money.zero()),
-  lastOrderAtLabel: stats?.lastOrderAt ? formatDateTimeCs(stats.lastOrderAt) : null,
-})
-
 export class ListUsers {
   constructor(private readonly deps: { uow: UnitOfWork }) {}
 
-  async execute(): Promise<UserRowView[]> {
+  async execute(
+    input: Partial<PageRequest> = {},
+    filter: UserFilter = { query: '', onlyProblems: false },
+  ): Promise<Page<UserRowView>> {
     const { users } = this.deps.uow.repos
+    const normalized = { ...filter, query: normalizeListText(filter.query) }
+    const total = await users.countFiltered(normalized)
+    const page = clampPage(normalizePage(input), total)
+    const usersOnPage = await users.listPage(page, normalized)
+    // Jeden hromadný souhrn pouze pro účty na aktuální stránce.
+    const userIds = usersOnPage.map((user) => user.id)
+    const stats = await users.orderStatsForUsers(userIds)
+    const statsByUserId = new Map(stats.map((row) => [row.userId, row]))
+    const items = usersOnPage.map((user) => toUserRow(user, statsByUserId.get(user.id)))
 
-    // Statistiky jedním dotazem pro všechny; počítat je per uživatele by u tabulky,
-    // kterou farmář otevírá denně, znamenalo N+1 dotazů.
-    const [all, stats] = await Promise.all([users.listAll(), users.orderStats()])
-    const byUserId = new Map(stats.map((row) => [row.userId, row]))
-
-    return all.map((user) => toUserRow(user, byUserId.get(user.id)))
+    return { ...page, total, items }
   }
 }
 
 export class GetUserDetail {
   constructor(private readonly deps: { uow: UnitOfWork }) {}
 
-  async execute(userId: number): Promise<UserDetailView> {
+  async execute(userId: number, input: Partial<PageRequest> = {}): Promise<UserDetailView> {
     const { users, orders } = this.deps.uow.repos
 
     const user = await users.findById(userId)
     if (!user) throw new NotFoundError('Uživatel')
 
+    const filter = { query: '', userId }
+    const total = await orders.countFiltered(filter)
+    const page = clampPage(normalizePage(input), total)
     const [stats, customerOrders] = await Promise.all([
-      users.orderStats(),
-      orders.listForCustomer(user.id),
+      users.orderStatsForUser(user.id),
+      orders.listPage(page, filter),
     ])
 
     const rows: OrderRowView[] = customerOrders.map(toOrderRow)
 
     return {
-      ...toUserRow(user, stats.find((row) => row.userId === user.id)),
+      ...toUserRow(user, stats),
       orders: rows,
+      ordersPage: { ...page, total },
     }
   }
 }
@@ -97,14 +84,15 @@ export class VerifyEmail {
     if (token.trim().length === 0) throw new NotFoundError('Ověřovací odkaz')
 
     return this.deps.uow.runInTransaction(async (repos) => {
-      const user = await repos.users.findByVerificationToken(token)
+      const user = await repos.users.lockByVerificationToken(token)
       if (!user) throw new NotFoundError('Ověřovací odkaz')
 
       // Prošlý odkaz se chová jako neexistující — hláška je stejná, aby z ní
       // nešlo poznat, jestli token někdy platil.
-      if (!user.canVerifyAt(this.deps.clock.now())) throw new NotFoundError('Ověřovací odkaz')
+      const now = this.deps.clock.now()
+      if (!user.canVerifyAt(now)) throw new NotFoundError('Ověřovací odkaz')
 
-      const verified = await repos.users.save(user.withVerified(this.deps.clock.now()))
+      const verified = await repos.users.save(user.withVerified(now))
       await claimGuestOrders(repos, verified)
       return { name: verified.name, email: verified.email.value }
     })
@@ -117,13 +105,14 @@ export class MarkUserVerified {
 
   async execute(userId: number): Promise<UserRowView> {
     return this.deps.uow.runInTransaction(async (repos) => {
-      const user = await repos.users.findById(userId)
+      const user = await repos.users.lockForUpdate(userId)
       if (!user) throw new NotFoundError('Uživatel')
       if (user.isVerified) throw new ConflictError('Účet už je ověřený')
 
       const verified = await repos.users.save(user.withVerified(this.deps.clock.now()))
       await claimGuestOrders(repos, verified)
-      return toUserRow(verified, undefined)
+      const stats = await repos.users.orderStatsForUser(userId)
+      return toUserRow(verified, stats)
     })
   }
 }
@@ -133,7 +122,7 @@ export class SetUserActive {
 
   async execute(userId: number, active: boolean): Promise<UserRowView> {
     return this.deps.uow.runInTransaction(async (repos) => {
-      const user = await repos.users.findById(userId)
+      const user = await repos.users.lockForUpdate(userId)
       if (!user) throw new NotFoundError('Uživatel')
 
       // Farmář si nesmí zamknout vlastní přístup do administrace.
@@ -142,7 +131,8 @@ export class SetUserActive {
       }
 
       const updated = await repos.users.save(user.withActive(active, this.deps.clock.now()))
-      return toUserRow(updated, undefined)
+      const stats = await repos.users.orderStatsForUser(userId)
+      return toUserRow(updated, stats)
     })
   }
 }
@@ -180,7 +170,7 @@ export class ResendVerification {
 
   async execute(userId: number): Promise<void> {
     const user = await this.deps.uow.runInTransaction(async (repos) => {
-      const found = await repos.users.findById(userId)
+      const found = await repos.users.lockForUpdate(userId)
       if (!found) throw new NotFoundError('Uživatel')
       if (found.isVerified) throw new ConflictError('Účet už je ověřený')
 

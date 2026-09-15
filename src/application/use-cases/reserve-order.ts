@@ -1,14 +1,14 @@
 import { Order, OrderItem } from '@/domain/entities'
 import { DeliveryMethod, type PaymentMethod } from '@/domain/enums'
-import { ValidationError } from '@/domain/errors'
-import type { OrderNotifier } from '@/domain/ports/order-presentation'
+import { NotFoundError, ValidationError } from '@/domain/errors'
+import type { OrderMailComposer } from '@/domain/ports/order-delivery'
 import type { Clock, DeliveryPolicy, TokenGenerator } from '@/domain/ports/services'
 import type { UnitOfWork } from '@/domain/ports/unit-of-work'
 import { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
-import { Money } from '@/domain/value-objects/money'
 
 export interface ReserveOrderInput {
+  readonly requestKey: string
   readonly customer: {
     readonly name: string
     readonly email: string
@@ -30,11 +30,7 @@ export interface ReserveOrderDeps {
   readonly uow: UnitOfWork
   readonly clock: Clock
   readonly tokenGenerator: TokenGenerator
-  /**
-   * Jediné, co use-case o notifikacích ví. Že se pod tím skládají dva e-maily
-   * a generuje QR kód, je věc infrastruktury.
-   */
-  readonly notifier: OrderNotifier
+  readonly composer: OrderMailComposer
   /** Ceník dopravy z konfigurace, ne konstanta v doméně. */
   readonly deliveryPolicy: DeliveryPolicy
 }
@@ -50,10 +46,26 @@ export class ReserveOrder {
   constructor(private readonly deps: ReserveOrderDeps) {}
 
   async execute(input: ReserveOrderInput): Promise<ReserveOrderResult> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.requestKey)) {
+      throw new ValidationError('Chybí platný identifikátor pokusu o rezervaci')
+    }
+    const requestKey = input.requestKey.toLowerCase()
     const customer = this.validateCustomer(input)
     const requested = this.mergeItems(input.items)
+    // Normalizované údaje a identita ze session. Stejný klíč nesmí zpřístupnit jiný nákup.
+    const content = JSON.stringify({
+      customer: { ...customer, email: customer.email.value },
+      delivery: input.delivery, payment: input.payment, userId: input.userId,
+      items: [...requested].sort(([a], [b]) => a - b).map(([id, quantity]) => [id, quantity.value]),
+    })
 
     const order = await this.deps.uow.runInTransaction(async (repos) => {
+      const existingId = await repos.reservationRequests.claim(requestKey, content)
+      if (existingId !== null) {
+        const existing = await repos.orders.findById(existingId)
+        if (!existing) throw new NotFoundError('Původní rezervace')
+        return existing
+      }
       const locked = await repos.varieties.lockForUpdate([...requested.keys()])
       const byId = new Map(locked.map((variety) => [variety.id, variety]))
 
@@ -85,26 +97,27 @@ export class ReserveOrder {
         await repos.varieties.save(variety)
       }
 
-      const subtotal = items.reduce((sum, item) => sum.plus(item.lineTotal), Money.zero())
+      const subtotal = Order.subtotalFor(items)
       const deliveryFee = Order.deliveryFeeFor(input.delivery, subtotal, this.deps.deliveryPolicy)
+      const amounts = Order.calculateAmounts(subtotal, deliveryFee)
 
-      return repos.orders.create({
+      const created = await repos.orders.create({
         customer,
         items,
         delivery: input.delivery,
         payment: input.payment,
-        subtotal,
-        deliveryFee,
-        total: subtotal.plus(deliveryFee),
+        ...amounts,
         userId: input.userId,
         publicToken: this.deps.tokenGenerator.publicToken(),
         createdAt: this.deps.clock.now(),
       })
+      const messages = await this.deps.composer.orderPlaced(created)
+      for (const [index, message] of messages.entries()) {
+        await repos.outbox.enqueue(`order:${created.id}:placed:${index}`, message)
+      }
+      await repos.reservationRequests.complete(requestKey, created.id)
+      return created
     })
-
-    // Až po commitu. Sklad je pravda, e-mail je notifikace — výpadek SMTP nesmí
-    // zrušit platnou rezervaci, takže si selhání ošetřuje notifier sám.
-    await this.deps.notifier.notifyOrderPlaced(order)
 
     return { code: order.code, publicToken: order.publicToken }
   }

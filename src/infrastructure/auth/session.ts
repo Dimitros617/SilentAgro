@@ -1,26 +1,34 @@
 import 'server-only'
 import { cookies, headers } from 'next/headers'
 import type { AuthResult } from '@/application/dto'
-import { AuthorizeFarmerSession } from '@/application/use-cases/auth'
+import { AuthorizeFarmerSession, AuthorizeSession } from '@/application/use-cases/auth'
 import { ForbiddenError } from '@/domain/errors'
 import type { SessionPayload, VerifiedSession } from '@/domain/ports/services'
+import { SESSION_COOKIE } from '@/infrastructure/auth/session-cookie'
 import { getEnv } from '@/infrastructure/config/env'
 import { getContainer } from '@/infrastructure/di/container'
 
-export const SESSION_COOKIE = 'silentagro_session'
-
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 3600
 
-export async function readSession(): Promise<VerifiedSession | null> {
+async function readVerifiedSession(): Promise<VerifiedSession | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value
   if (!token) return null
   return getContainer().tokens.verify(token)
 }
 
+export async function readSession(): Promise<(AuthResult & { issuedAt: Date }) | null> {
+  const session = await readVerifiedSession()
+  if (!session) return null
+  const user = await new AuthorizeSession({ uow: getContainer().uow }).execute(session)
+  if (!user) return null
+  return { ...user, issuedAt: session.issuedAt }
+}
+
 export async function writeSession(payload: SessionPayload): Promise<void> {
   const token = await getContainer().tokens.sign(payload)
 
-  ;(await cookies()).set(SESSION_COOKIE, token, {
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: getEnv().APP_ENV === 'production',
     sameSite: 'lax',
@@ -30,20 +38,19 @@ export async function writeSession(payload: SessionPayload): Promise<void> {
 }
 
 export async function clearSession(): Promise<void> {
-  ;(await cookies()).delete(SESSION_COOKIE)
+  const cookieStore = await cookies()
+  cookieStore.delete(SESSION_COOKIE)
 }
 
 /**
  * Farmářská session ověřená proti databázi.
  *
  * Role se nebere z tokenu: ten platí sedm dní, takže odebraná role, deaktivace ani
- * obnova hesla by se v něm neprojevily. Dotaz do databáze je tady schválně — platí
- * se jen na administrátorských cestách, ne při každém renderu veřejné stránky.
+ * obnova hesla by se v něm neprojevily. Aktuální účet i roli ověřuje aplikační use-case.
  */
 export async function readFarmerSession(): Promise<AuthResult | null> {
-  const session = await readSession()
+  const session = await readVerifiedSession()
   if (!session) return null
-
   return new AuthorizeFarmerSession({ uow: getContainer().uow }).execute(session)
 }
 

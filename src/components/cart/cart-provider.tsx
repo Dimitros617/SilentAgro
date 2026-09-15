@@ -8,7 +8,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
-  useRef,
+  useState,
 } from 'react'
 import { CART_STORAGE_KEY, type CartAction, type CartLine, cartReducer } from './cart-reducer'
 
@@ -22,7 +22,7 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null)
 
-export function CartProvider({ children }: { children: ReactNode }) {
+export function CartProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [lines, dispatch] = useReducer(cartReducer, [])
 
   /**
@@ -30,7 +30,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
    * reduceru nejde: na serveru neexistuje, takže by se serverový a klientský výstup
    * lišily a React by ohlásil hydratační chybu.
    */
-  const hydrated = useRef(false)
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
     try {
@@ -39,21 +39,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
     } catch {
       // Poškozený nebo nedostupný localStorage znamená prázdný košík, ne pád stránky.
     } finally {
-      hydrated.current = true
+      setHydrated(true)
     }
   }, [])
 
   useEffect(() => {
     // Zápis se přeskočí, dokud hydratace neproběhla. Jinak by prázdný počáteční stav
     // přepsal uložený košík dřív, než se stihne načíst.
-    if (!hydrated.current) return
+    if (!hydrated) return
 
     try {
       window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(lines))
     } catch {
       // Plné nebo zakázané úložiště nesmí rozbít nákup.
     }
-  }, [lines])
+  }, [lines, hydrated])
 
   const quantityOf = useCallback(
     (varietyId: number) => lines.find((line) => line.varietyId === varietyId)?.quantityKg ?? 0,

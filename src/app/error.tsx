@@ -5,10 +5,10 @@ import { useEffect } from 'react'
 export default function ErrorPage({
   error,
   reset,
-}: {
+}: Readonly<{
   error: Error & { digest?: string }
   reset: () => void
-}) {
+}>) {
   useEffect(() => {
     // `digest` je jediné, co React o produkční chybě prozradí klientovi; podrobnost
     // zůstává v serverovém logu, kam patří.

@@ -9,12 +9,12 @@ export function Bins({
   tone = 'ink',
   height = 140,
   showKg = false,
-}: {
+}: Readonly<{
   bins: BinView[]
   tone?: 'ink' | 'light'
   height?: number
   showKg?: boolean
-}) {
+}>) {
   if (bins.length === 0) {
     return <p className="muted">Zatím žádná odrůda na skladě.</p>
   }
@@ -22,7 +22,7 @@ export function Bins({
   return (
     <div className="bins" style={{ height }}>
       {bins.map((bin) => (
-        <div key={bin.name} className="bin">
+        <div key={bin.id} className="bin">
           <span className={tone === 'ink' ? 'bin__value' : 'bin__value bin__value--light'}>
             {showKg ? bin.kgLabel : bin.percentLabel}
           </span>

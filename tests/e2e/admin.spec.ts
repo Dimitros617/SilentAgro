@@ -33,6 +33,29 @@ test('sklad větší než kapacita se neuloží', async ({ page }) => {
   await expect(page.getByRole('status')).toContainText('kapacit')
 })
 
+test('starý formulář ve druhé záložce nepřepíše novější sklad', async ({ page }) => {
+  await page.goto('/admin/sklad')
+  const stalePage = await page.context().newPage()
+  try {
+    await stalePage.goto('/admin/sklad')
+    const stockInput = page.locator('.admin-row').first().getByLabel(/^Sklad .* v kilogramech$/)
+    const before = Number(await stockInput.inputValue())
+    await stockInput.fill(String(before - 1))
+    await page.locator('.admin-row').first().getByRole('button', { name: 'Uložit' }).click()
+    await expect(page.getByRole('status')).toContainText('uloženo')
+
+    const staleRow = stalePage.locator('.admin-row').first()
+    await staleRow.getByLabel(/^Sklad .* v kilogramech$/).fill(String(before - 2))
+    await staleRow.getByRole('button', { name: 'Uložit' }).click()
+    await expect(stalePage.getByRole('status')).toContainText('Sklad se mezitím změnil')
+
+    await page.goto('/burza')
+    await expect(page.getByTestId('stock-bernie')).toContainText(String(before - 1))
+  } finally {
+    await stalePage.close()
+  }
+})
+
 test('farmář zveřejní novinku a objeví se na homepage', async ({ page }) => {
   const title = `Test novinka ${Date.now()}`
 
@@ -73,8 +96,11 @@ test('farmář označí objednávku jako zaplacenou a označení přežije obnov
   const checkbox = page.getByLabel('Zaplaceno').first()
   const wasChecked = await checkbox.isChecked()
 
-  await checkbox.setChecked(!wasChecked)
+  // Řízený checkbox ukáže změnu až po potvrzení serverové akce. setChecked
+  // vyžaduje synchronní přepnutí už při kliku; zde čekáme na skutečně uložený stav.
+  await checkbox.click()
   await expect(checkbox).toBeChecked({ checked: !wasChecked })
+  await expect(checkbox).toBeEnabled()
 
   // Kontrola po obnovení je podstatná: bez ní by test prošel i zaškrtávátku,
   // které si stav drží jen v paměti prohlížeče.
@@ -99,7 +125,7 @@ test('farmář se odhlásí a administrace mu zmizí', async ({ page }) => {
   await expect(page).toHaveURL(/prihlaseni=vyzadovano/)
 })
 
-test('farmář zruší objednávku, sklad se vrátí a zákazník dostane e-mail', async ({ page }) => {
+test('farmář zruší objednávku, sklad se vrátí a potvrzení už nenabízí platbu', async ({ page }) => {
   // Vlastní objednávka, aby test nezávisel na tom, co zbylo po jiných scénářích.
   const email = `zruseni-${Date.now()}@email.cz`
 
@@ -113,9 +139,11 @@ test('farmář zruší objednávku, sklad se vrátí a zákazník dostane e-mail
   await page.goto('/kosik')
   await page.getByLabel('Jméno a příjmení').fill('Zrušený Zákazník')
   await page.getByLabel('E-mail (sem přijde potvrzení)').fill(email)
-  await page.getByRole('button', { name: 'Hotově při převzetí' }).click()
+  await page.getByRole('button', { name: 'QR platba' }).click()
   await page.getByRole('button', { name: 'Závazně rezervovat' }).click()
   await expect(page).toHaveURL(/\/rezervace\//)
+  const confirmationUrl = page.url()
+  await expect(page.getByRole('img', { name: /QR kód pro platbu/ })).toBeVisible()
 
   const code = (await page.getByRole('heading', { name: /Rezervace #\d+ přijata/ }).innerText())
     .match(/#\d+/)?.[0] as string
@@ -139,6 +167,18 @@ test('farmář zruší objednávku, sklad se vrátí a zákazník dostane e-mail
   await expect(cancelled.getByText('Kroupy zničily úrodu')).toBeVisible()
   await expect(cancelled.getByRole('button', { name: 'Zrušit' })).toHaveCount(0)
   await expect(cancelled.locator('.status-btn')).toBeDisabled()
+
+  await page.goto(confirmationUrl)
+  await expect(page.getByRole('heading', { name: /Rezervace #\d+ zrušena/ })).toBeVisible()
+  await expect(page.getByText('Kroupy zničily úrodu, omlouváme se.')).toBeVisible()
+  await expect(page.getByRole('img', { name: /QR kód/ })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Platba převodem' })).toHaveCount(0)
+})
+
+test('neúplné ID v adrese uživatele neotevře jiný profil', async ({ page }) => {
+  const response = await page.goto('/admin/uzivatele/1junk')
+  expect(response?.status()).toBe(404)
+  await expect(page.getByRole('heading', { name: 'Tady nic není' })).toBeVisible()
 })
 
 test('zrušení bez důvodu nejde potvrdit', async ({ page }) => {

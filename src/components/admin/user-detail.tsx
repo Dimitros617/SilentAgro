@@ -12,8 +12,7 @@ import type { UserDetailView } from '@/application/dto'
 import { useToast } from '@/components/layout/toast'
 import { OrdersTable } from './orders-table'
 
-export function UserDetail({ initial }: { initial: UserDetailView }) {
-  const [user, setUser] = useState(initial)
+export function UserDetail({ initial: user }: Readonly<{ initial: UserDetailView }>) {
   const [pending, setPending] = useState(false)
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
@@ -24,6 +23,8 @@ export function UserDetail({ initial }: { initial: UserDetailView }) {
     setPending(true)
     try {
       await action()
+    } catch {
+      show('Spojení se serverem se přerušilo. Obnovte profil a ověřte výsledek.')
     } finally {
       setPending(false)
     }
@@ -33,11 +34,6 @@ export function UserDetail({ initial }: { initial: UserDetailView }) {
     run(async () => {
       const result = await markUserVerifiedAction(user.id)
       if (result.ok) {
-        // Ruční ověření může účtu připsat hostovské objednávky z doby před registrací,
-        // takže čísla i seznam na téhle obrazovce můžou být do dalšího načtení
-        // zastaralá. Akce vrací UserRowView bez statistik, proto se přebírají jen
-        // údaje o účtu; čerstvá čísla přijdou s příštím renderem stránky.
-        setUser((current) => ({ ...current, ...result.value, orders: current.orders }))
         show('Účet ověřen')
       } else {
         show(result.error)
@@ -54,7 +50,6 @@ export function UserDetail({ initial }: { initial: UserDetailView }) {
     run(async () => {
       const result = await setUserActiveAction(user.id, !user.isActive)
       if (result.ok) {
-        setUser((current) => ({ ...current, ...result.value, orders: current.orders }))
         show(result.value.isActive ? 'Účet aktivován' : 'Účet deaktivován')
       } else {
         show(result.error)

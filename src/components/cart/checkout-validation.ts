@@ -1,4 +1,5 @@
 import { DeliveryMethod, type PaymentMethod } from '@/domain/enums'
+import { EmailAddress } from '@/domain/value-objects/email-address'
 
 export interface CheckoutForm {
   name: string
@@ -11,8 +12,6 @@ export interface CheckoutForm {
 
 export type CheckoutErrors = Partial<Record<'name' | 'email' | 'phone', string>>
 
-const EMAIL_SHAPE = /^[^\s@,;:<>"()[\]\\]+@[^\s@,;:<>"()[\]\\]+\.[a-z0-9-]{2,}$/i
-
 /**
  * Validace na klientovi je jen pro rychlou zpětnou vazbu. Server ji v `ReserveOrder`
  * dělá znovu a nikdy se na tuhle nespoléhá — klientský kód jde obejít.
@@ -24,7 +23,7 @@ export function validateCheckout(form: CheckoutForm): CheckoutErrors {
 
   if (form.email.trim().length === 0) {
     errors.email = 'Vyplňte e-mail'
-  } else if (!EMAIL_SHAPE.test(form.email.trim())) {
+  } else if (!EmailAddress.isValid(form.email)) {
     errors.email = 'E-mail nemá správný tvar'
   }
 

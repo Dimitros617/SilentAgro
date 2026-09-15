@@ -27,7 +27,7 @@ const normalize = (raw: string): string =>
 export function isValidIban(raw: string): boolean {
   const iban = normalize(raw)
 
-  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(iban)) return false
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(iban)) return false
 
   const country = iban.slice(0, 2)
   const expectedLength = LENGTH_BY_COUNTRY[country]

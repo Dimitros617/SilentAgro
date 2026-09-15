@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { isValidIban } from '@/domain/value-objects/iban'
 
-export const MAIL_DRIVERS = ['mailpit', 'smtp', 'memory'] as const
+const MAIL_DRIVERS = ['mailpit', 'smtp', 'memory'] as const
 export type MailDriver = (typeof MAIL_DRIVERS)[number]
 
 const booleanFromString = z
@@ -28,7 +28,7 @@ const schema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
     MAIL_FROM: z.string().min(1, 'je povinná'),
-    FARMER_EMAIL: z.string().email('musí být platný e-mail'),
+    FARMER_EMAIL: z.email('musí být platný e-mail'),
 
     /**
      * Identita farmy. Objevuje se v patičce, v hlavičce a pod každým odeslaným
@@ -56,7 +56,7 @@ const schema = z
       .refine(isValidIban, 'nemá platný tvar nebo kontrolní číslice'),
     BANK_ACCOUNT_NUMBER: z.string().min(1, 'je povinná'),
 
-    PUBLIC_BASE_URL: z.string().url('musí být platná URL'),
+    PUBLIC_BASE_URL: z.url('musí být platná URL'),
     UPLOAD_DIR: z.string().default('./public/uploads'),
 
     /**

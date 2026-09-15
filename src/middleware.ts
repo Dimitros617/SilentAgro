@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
+import { SESSION_COOKIE } from '@/infrastructure/auth/session-cookie'
 import { buildCsp, createNonce } from '@/shared/csp'
 
 /**
@@ -14,8 +15,6 @@ import { buildCsp, createNonce } from '@/shared/csp'
  * Od nasazení nonce sem patří i hlavička CSP: nonce musí vzniknout na každý požadavek
  * zvlášť, a to umí jedině vrstva, která každý požadavek vidí.
  */
-const SESSION_COOKIE = 'silentagro_session'
-
 const isDev = process.env.NODE_ENV === 'development'
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {

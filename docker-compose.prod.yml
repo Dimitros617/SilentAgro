@@ -20,7 +20,7 @@ services:
     image: ghcr.io/${GHCR_REPOSITORY:?nastavte GHCR_REPOSITORY}:${APP_VERSION:?nastavte APP_VERSION}
     restart: unless-stopped
 
-    environment:
+    environment: &app-environment
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?nastavte DATABASE_URL}
       AUTH_SECRET: ${AUTH_SECRET:?nastavte AUTH_SECRET}
@@ -84,6 +84,24 @@ services:
       retries: 5
       start_period: 40s
 
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  mail-worker:
+    image: ghcr.io/${GHCR_REPOSITORY:?nastavte GHCR_REPOSITORY}:${APP_VERSION:?nastavte APP_VERSION}
+    command: ['node', 'mail-worker.cjs']
+    environment: *app-environment
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ['/tmp:size=64m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      disable: true
+    stop_grace_period: 40s
     logging:
       driver: json-file
       options:

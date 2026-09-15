@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { ReserveOrder } from '@/application/use-cases/reserve-order'
 import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
 import { InsufficientStockError, ValidationError } from '@/domain/errors'
@@ -9,7 +10,7 @@ import {
   fixedClock,
   makeBundle,
   TEST_DELIVERY_POLICY,
-  makeNotifier,
+  makeOrderMailComposer,
   makeVariety,
 } from './fakes'
 
@@ -29,7 +30,7 @@ const setup = (options: { varieties?: ReturnType<typeof makeVariety>[]; mailerFa
     uow: bundle.uow,
     clock: fixedClock(),
     tokenGenerator: new SequentialTokenGenerator(),
-    notifier: makeNotifier(mailer, logger),
+    composer: makeOrderMailComposer(),
     deliveryPolicy: TEST_DELIVERY_POLICY,
   })
 
@@ -42,6 +43,7 @@ const reserve = (
   overrides: Partial<{ delivery: DeliveryMethod; payment: PaymentMethod; note: string }> = {},
 ) =>
   useCase.execute({
+    requestKey: randomUUID(),
     customer: { ...customer, note: overrides.note ?? '' },
     delivery: overrides.delivery ?? DeliveryMethod.PICKUP,
     payment: overrides.payment ?? PaymentMethod.CASH,
@@ -50,16 +52,16 @@ const reserve = (
   })
 
 describe('ReserveOrder — úspěšná rezervace', () => {
-  it('odečte sklad, uloží objednávku a odešle dva e-maily', async () => {
+  it('odečte sklad, uloží objednávku a zařadí dva e-maily do fronty', async () => {
     const ctx = setup()
     const result = await reserve(ctx.useCase, [{ varietyId: 1, quantityKg: 2.5 }])
 
     expect(result.code).toBe('#2610')
     expect(result.publicToken).toBe('token-1')
     expect(ctx.varieties.get(1)?.stock.value).toBe(7.5)
-    expect(ctx.mailer.sent).toHaveLength(2)
-    expect(ctx.mailer.sent[0]?.to).toBe('jan@email.cz')
-    expect(ctx.mailer.sent[1]?.to).toBe('farma@silentagro.cz')
+    expect(ctx.outbox.messages).toHaveLength(2)
+    expect(ctx.outbox.messages[0]?.to).toBe('jan@email.cz')
+    expect(ctx.outbox.messages[1]?.to).toBe('farma@silentagro.cz')
   })
 
   it('používá cenu ze skladu, ne od klienta', async () => {
@@ -141,7 +143,7 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
       InsufficientStockError,
     )
     expect(ctx.varieties.get(1)?.stock.value).toBe(2)
-    expect(ctx.mailer.sent).toHaveLength(0)
+    expect(ctx.outbox.messages).toHaveLength(0)
   })
 
   it('odmítne prázdný košík', async () => {
@@ -182,6 +184,7 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
     const ctx = setup()
     await expect(
       ctx.useCase.execute({
+        requestKey: randomUUID(),
         customer: { ...customer, name: '   ' },
         delivery: DeliveryMethod.PICKUP,
         payment: PaymentMethod.CASH,
@@ -195,6 +198,7 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
     const ctx = setup()
     await expect(
       ctx.useCase.execute({
+        requestKey: randomUUID(),
         customer: { ...customer, email: 'jan.email.cz' },
         delivery: DeliveryMethod.PICKUP,
         payment: PaymentMethod.CASH,
@@ -208,6 +212,7 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
     const ctx = setup()
     await expect(
       ctx.useCase.execute({
+        requestKey: randomUUID(),
         customer: { ...customer, phone: '' },
         delivery: DeliveryMethod.LOCAL_DELIVERY,
         payment: PaymentMethod.CASH,
@@ -241,14 +246,14 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
 })
 
 describe('ReserveOrder — e-maily', () => {
-  it('selhání odesílání objednávku nezruší a zaloguje se', async () => {
+  it('uložení rezervace nezávisí na dostupnosti odesílatele', async () => {
     const ctx = setup({ mailerFails: true })
     const result = await reserve(ctx.useCase, [{ varietyId: 1, quantityKg: 1 }])
 
     expect(result.code).toBe('#2610')
     expect(ctx.varieties.get(1)?.stock.value).toBe(9)
-    // oba e-maily se zkoušejí samostatně, takže selhání obou dá dva záznamy
-    expect(ctx.logger.errors).toHaveLength(2)
+    expect(ctx.outbox.messages).toHaveLength(2)
+    expect(ctx.mailer.failures).toBe(0)
   })
 
   it('u QR platby nese e-mail zákazníkovi platební údaje', async () => {
@@ -257,39 +262,39 @@ describe('ReserveOrder — e-maily', () => {
       payment: PaymentMethod.QR_CODE,
     })
 
-    expect(ctx.mailer.sent[0]?.text).toContain('2000145399/0800')
-    expect(ctx.mailer.sent[0]?.text).toContain('Agro:2610')
+    expect(ctx.outbox.messages[0]?.text).toContain('2000145399/0800')
+    expect(ctx.outbox.messages[0]?.text).toContain('Agro:2610')
   })
 
   it('u platby hotově platební údaje neposílá', async () => {
     const ctx = setup()
     await reserve(ctx.useCase, [{ varietyId: 1, quantityKg: 1 }], { payment: PaymentMethod.CASH })
 
-    expect(ctx.mailer.sent[0]?.text).not.toContain('Variabilní symbol')
+    expect(ctx.outbox.messages[0]?.text).not.toContain('Variabilní symbol')
   })
 
   it('odkaz na potvrzení nese veřejný token, ne kód objednávky', async () => {
     const ctx = setup()
     await reserve(ctx.useCase, [{ varietyId: 1, quantityKg: 1 }])
 
-    expect(ctx.mailer.sent[0]?.text).toContain('https://silentagro.cz/rezervace/token-1')
-    expect(ctx.mailer.sent[0]?.text).not.toContain('/rezervace/2610')
+    expect(ctx.outbox.messages[0]?.text).toContain('https://silentagro.cz/rezervace/token-1')
+    expect(ctx.outbox.messages[0]?.text).not.toContain('/rezervace/2610')
   })
 
-  it('selhání prvního e-mailu nezabrání odeslání druhého', async () => {
+  it('každý příjemce má vlastní záznam a nic se neodesílá přímo', async () => {
     // farmář se o objednávce musí dozvědět i tehdy, když zákazníkova adresa odmítá poštu
     const ctx = setup()
     let attempts = 0
     ctx.mailer.send = async (message) => {
       attempts += 1
       if (attempts === 1) throw new Error('adresát neexistuje')
-      ctx.mailer.sent.push(message)
+      ctx.outbox.messages.push(message)
     }
 
     await reserve(ctx.useCase, [{ varietyId: 1, quantityKg: 1 }])
 
-    expect(attempts).toBe(2)
-    expect(ctx.mailer.sent).toHaveLength(1)
-    expect(ctx.mailer.sent[0]?.to).toBe('farma@silentagro.cz')
+    expect(attempts).toBe(0)
+    expect(ctx.outbox.messages).toHaveLength(2)
+    expect(ctx.outbox.messages[1]?.to).toBe('farma@silentagro.cz')
   })
 })

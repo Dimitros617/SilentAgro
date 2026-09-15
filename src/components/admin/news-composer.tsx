@@ -9,8 +9,7 @@ import { NEWS_TAG_LABELS, NewsTag } from '@/domain/enums'
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
-export function NewsComposer({ initial }: { initial: NewsView[] }) {
-  const [posts, setPosts] = useState(initial)
+export function NewsComposer({ initial: posts }: Readonly<{ initial: NewsView[] }>) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [tag, setTag] = useState<NewsTag>(NewsTag.HARVEST)
@@ -46,7 +45,6 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
     try {
       const result = await publishNewsAction({ title, body, tag, imageUrl })
       if (result.ok) {
-        setPosts((current) => [result.value, ...current])
         setTitle('')
         setBody('')
         setImageUrl(null)
@@ -55,6 +53,8 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
       } else {
         show(result.error)
       }
+    } catch {
+      show('Spojení se serverem se přerušilo. Obnovte seznam a ověřte výsledek.')
     } finally {
       setPending(false)
     }
@@ -64,8 +64,9 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
     setPending(true)
     try {
       const result = await deleteNewsAction(id)
-      if (result.ok) setPosts((current) => current.filter((post) => post.id !== id))
-      else show(result.error)
+      if (!result.ok) show(result.error)
+    } catch {
+      show('Spojení se serverem se přerušilo. Obnovte seznam a ověřte výsledek.')
     } finally {
       setPending(false)
     }
@@ -133,6 +134,7 @@ export function NewsComposer({ initial }: { initial: NewsView[] }) {
           <span>{uploading ? 'Nahrávám…' : 'Nahrát fotku z pole'}</span>
           <input
             type="file"
+            disabled={uploading || pending}
             accept="image/jpeg,image/png,image/webp"
             style={{ display: 'none' }}
             onChange={(event) => {

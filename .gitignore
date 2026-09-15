@@ -1,7 +1,10 @@
 node_modules/
 .next/
 out/
+dist/
 coverage/
+reports/
+.scannerwork/
 playwright-report/
 test-results/
 *.tsbuildinfo

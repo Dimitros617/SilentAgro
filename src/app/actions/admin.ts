@@ -20,7 +20,7 @@ import {
   SetUserActive,
 } from '@/application/use-cases/users'
 import type { UserRowView } from '@/application/dto'
-import { NewsTag } from '@/domain/enums'
+import { NewsTag, OrderStatus } from '@/domain/enums'
 import { ValidationError } from '@/domain/errors'
 import { requireFarmer } from '@/infrastructure/auth/session'
 import { getContainer } from '@/infrastructure/di/container'
@@ -33,6 +33,7 @@ const idSchema = z.number().int().positive()
 // do administrace anglickou technickou větu o délce řetězce.
 const varietySchema = z.object({
   id: z.number().int().positive().nullable(),
+  expectedStockKg: z.number().nonnegative().nullable(),
   name: z.string().min(1, 'Vyplňte název odrůdy').max(120, 'Název je příliš dlouhý'),
   tag: z.string().max(160, 'Štítek je příliš dlouhý').default(''),
   description: z.string().max(4000, 'Popis je příliš dlouhý').default(''),
@@ -69,14 +70,16 @@ const revalidateCatalog = (): void => {
 
 export async function advanceOrderStatusAction(
   orderId: unknown,
+  expectedStatus: unknown,
 ): Promise<Result<OrderRowView, string>> {
   try {
     // Kontrola role i tady, ne jen v middleware: server action se dá zavolat přímo.
     await requireFarmer()
     const row = await new AdvanceOrderStatus({ uow: getContainer().uow }).execute(
       parse(idSchema, orderId),
+      parse(z.enum(OrderStatus), expectedStatus),
     )
-    revalidatePath('/admin/objednavky')
+    revalidatePath('/admin', 'layout')
     return ok(row)
   } catch (error) {
     return toResultError(error)
@@ -96,8 +99,7 @@ export async function setOrderPaidAction(
       clock: container.clock,
     }).execute(parse(idSchema, orderId), parse(z.boolean(), paid))
 
-    revalidatePath('/admin/objednavky')
-    revalidatePath('/admin')
+    revalidatePath('/admin', 'layout')
     return ok(result)
   } catch (error) {
     return toResultError(error)
@@ -171,12 +173,11 @@ export async function cancelOrderAction(
     const row = await new CancelOrder({
       uow: container.uow,
       clock: container.clock,
-      notifier: container.notifier,
+      composer: container.orderMailComposer,
     }).execute(parse(idSchema, orderId), parse(z.string().max(1000), reason))
 
     // Sklad se změnil, takže stránky, které ho ukazují, musí přestat platit.
     revalidateCatalog()
-    revalidatePath('/admin/objednavky')
     return ok(row)
   } catch (error) {
     return toResultError(error)
@@ -193,7 +194,7 @@ export async function markUserVerifiedAction(userId: unknown): Promise<Result<Us
       clock: container.clock,
     }).execute(parse(idSchema, userId))
 
-    revalidatePath('/admin/uzivatele')
+    revalidatePath('/admin/uzivatele', 'layout')
     return ok(row)
   } catch (error) {
     return toResultError(error)
@@ -213,7 +214,7 @@ export async function setUserActiveAction(
       clock: container.clock,
     }).execute(parse(idSchema, userId), parse(z.boolean(), active))
 
-    revalidatePath('/admin/uzivatele')
+    revalidatePath('/admin/uzivatele', 'layout')
     return ok(row)
   } catch (error) {
     return toResultError(error)
@@ -257,7 +258,7 @@ export async function resendVerificationAction(userId: unknown): Promise<Result<
       config: { publicBaseUrl: container.config.publicBaseUrl },
     }).execute(parse(idSchema, userId))
 
-    revalidatePath('/admin/uzivatele')
+    revalidatePath('/admin/uzivatele', 'layout')
     return ok(null)
   } catch (error) {
     return toResultError(error)

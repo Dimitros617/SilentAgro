@@ -13,10 +13,10 @@ const OPTIONS = {
   color: { dark: '#14201aff', light: '#ffffffff' },
 } as const
 
-export const renderQrPng = (payload: string): Promise<Buffer> =>
+const renderQrPng = (payload: string): Promise<Buffer> =>
   QRCode.toBuffer(payload, { ...OPTIONS, type: 'png' })
 
-export const renderQrDataUrl = (payload: string): Promise<string> =>
+const renderQrDataUrl = (payload: string): Promise<string> =>
   QRCode.toDataURL(payload, OPTIONS)
 
 /**

@@ -40,7 +40,9 @@ export function meterSegments({
   const stock = Math.max(0, stockKg)
   const cart = Math.min(Math.max(0, inCartKg), stock)
   const pending = Math.min(Math.max(0, pendingKg), stock - cart)
-  const share = (kg: number) => (kg / capacityKg) * 100
+  // Vrácená rezervace smí překročit nově sníženou kapacitu. Graf zůstává v liště.
+  const scaleKg = Math.max(capacityKg, stock)
+  const share = (kg: number) => (kg / scaleKg) * 100
 
   return {
     remainingPercent: share(stock - cart - pending),

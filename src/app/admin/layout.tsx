@@ -6,7 +6,7 @@ import { AdminTabs } from '@/components/admin/admin-tabs'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminLayout({ children }: { children: ReactNode }) {
+export default async function AdminLayout({ children }: Readonly<{ children: ReactNode }>) {
   /**
    * Druhá kontrola role, tentokrát proti databázi. Middleware přesměrovává prohlížeč,
    * ale spoléhat se jen na něj by znamenalo, že o přístupu rozhoduje vrstva, kterou lze

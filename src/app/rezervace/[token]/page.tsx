@@ -4,21 +4,22 @@ import { notFound } from 'next/navigation'
 import { GetOrderByToken } from '@/application/use-cases/get-order-by-token'
 import { NotFoundError } from '@/domain/errors'
 import { getContainer } from '@/infrastructure/di/container'
+import { CompleteReservation } from '@/components/cart/complete-reservation'
 
 /** Stránka nese osobní údaje, takže nesmí skončit v žádné cache. */
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Rezervace přijata',
+  title: 'Rezervace',
   robots: { index: false, follow: false },
 }
 
 export default async function ConfirmationPage({
   params,
-}: {
+}: Readonly<{
   // V Next 15 jsou parametry cesty Promise.
   params: Promise<{ token: string }>
-}) {
+}>) {
   const { token } = await params
   const container = getContainer()
 
@@ -34,15 +35,25 @@ export default async function ConfirmationPage({
 
   return (
     <div className="shell section rise" style={{ maxWidth: 1000 }}>
-      <div className="alert alert--success" style={{ padding: 30, borderRadius: 'var(--radius-xl)' }}>
+      <CompleteReservation token={token} />
+      <div className={order.isCancelled ? 'alert alert--error' : 'alert alert--success'} style={{ padding: 30, borderRadius: 'var(--radius-xl)' }}>
         <h1 className="display" style={{ fontSize: 32, letterSpacing: '-0.02em' }}>
-          Rezervace {order.code} přijata
+          Rezervace {order.code} {order.isCancelled ? 'zrušena' : 'přijata'}
         </h1>
         <p style={{ color: '#2f4a3a', margin: '10px 0 0', lineHeight: 1.6 }}>
-          Odečetli jsme {order.totalKgLabel} ze skladu. Odesláno potvrzení na{' '}
-          <strong>{order.customerEmail}</strong> a upozornění farmáři.
+          {order.isCancelled
+            ? order.cancellationReason
+            : `Odečetli jsme ${order.totalKgLabel} ze skladu. Podrobnosti rezervace najdete níže.`}
         </p>
       </div>
+
+      <section className="card" style={{ marginTop: 20 }}>
+        <h2 className="display h3">Cena rezervace</h2>
+        <p>Položky: {order.subtotalLabel}</p>
+        {order.discountLabel ? <p>Sleva: −{order.discountLabel}</p> : null}
+        <p>Doprava: {order.deliveryFeeLabel}</p>
+        <strong>Celkem: {order.totalLabel}</strong>
+      </section>
 
       {order.payment ? (
         <section className="card" style={{ marginTop: 20 }}>

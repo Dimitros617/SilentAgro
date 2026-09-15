@@ -21,6 +21,42 @@ const farmer = () =>
   testPrisma.user.findUniqueOrThrow({ where: { email: 'farma@silentagro.cz' } })
 
 describe('seed', () => {
+  it('při opakování zachová identity, objednávky i upravené novinky', async () => {
+    await seed(testPrisma, 'prvniHeslo123')
+    const varieties = await testPrisma.variety.findMany({
+      orderBy: { id: 'asc' }, select: { id: true, slug: true },
+    })
+    const orders = await testPrisma.order.findMany({
+      orderBy: { id: 'asc' }, include: { items: true },
+    })
+    const post = await testPrisma.newsPost.findFirstOrThrow()
+    await testPrisma.newsPost.update({ where: { id: post.id }, data: { title: 'Novinka upravená farmářem' } })
+    const counts = {
+      news: await testPrisma.newsPost.count(),
+      fields: await testPrisma.field.count(),
+      harvest: await testPrisma.harvestEntry.count(),
+      storage: await testPrisma.storageReading.count(),
+    }
+
+    await seed(testPrisma, 'prvniHeslo123')
+
+    expect(await testPrisma.variety.findMany({
+      orderBy: { id: 'asc' }, select: { id: true, slug: true },
+    })).toEqual(varieties)
+    expect(await testPrisma.order.findMany({
+      orderBy: { id: 'asc' }, include: { items: true },
+    })).toEqual(orders)
+    expect(await testPrisma.newsPost.findUniqueOrThrow({ where: { id: post.id } })).toMatchObject({
+      title: 'Novinka upravená farmářem',
+    })
+    expect({
+      news: await testPrisma.newsPost.count(),
+      fields: await testPrisma.field.count(),
+      harvest: await testPrisma.harvestEntry.count(),
+      storage: await testPrisma.storageReading.count(),
+    }).toEqual(counts)
+  })
+
   it('nastaví heslo farmáře i při opakovaném spuštění', async () => {
     await seed(testPrisma, 'prvniHeslo123')
     expect(await bcrypt.compare('prvniHeslo123', (await farmer()).passwordHash)).toBe(true)

@@ -1,5 +1,3 @@
-import type { Kilograms } from '@/domain/value-objects/kilograms'
-import type { Money } from '@/domain/value-objects/money'
 
 /**
  * Farma je česká, takže se formátuje výhradně v `cs-CZ` a v pražském pásmu — bez ohledu
@@ -33,17 +31,17 @@ const dateTimeFormat = new Intl.DateTimeFormat(LOCALE, {
 export const formatKgNumber = (value: number): string => quantityFormat.format(value)
 
 /** Množství s jednotkou: `7,5 kg`. */
-export const formatKg = (quantity: Kilograms): string => `${formatKgNumber(quantity.value)} kg`
+export const formatKg = (quantity: { readonly value: number }): string => `${formatKgNumber(quantity.value)} kg`
 
 /** Celková částka zaokrouhlená na koruny: `6 480 Kč`. */
-export const formatCzk = (money: Money): string => `${wholeFormat.format(money.czk)} Kč`
+export const formatCzk = (money: { readonly czk: number; readonly haleru: number }): string => `${wholeFormat.format(money.czk)} Kč`
 
 /**
  * Cena za kilogram. Haléře se ukazují jen tehdy, když nějaké jsou — `22 Kč`, ale `19,50 Kč`.
  * Zaokrouhlit ji na celé koruny nelze: násobí se množstvím, takže by se chyba propsala
  * do celkové částky.
  */
-export const formatCzkPerKg = (money: Money): string =>
+export const formatCzkPerKg = (money: { readonly czk: number; readonly haleru: number }): string =>
   money.haleru % 100 === 0
     ? `${wholeFormat.format(money.czk)} Kč`
     : `${preciseFormat.format(money.czk)} Kč`
@@ -55,7 +53,6 @@ export const formatDateCs = (date: Date): string => dateFormat.format(date)
 export const formatDateTimeCs = (date: Date): string => dateTimeFormat.format(date)
 
 /** Procento pro popisky grafů. */
-export const formatPercent = (value: number): string => `${Math.round(value)} %`
 
 /** Plocha pole: `180 m²`. */
 export const formatArea = (squareMeters: number): string =>

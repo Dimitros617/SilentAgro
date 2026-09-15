@@ -1,5 +1,5 @@
-import type { DeliveryMethod, FieldStatus, NewsTag, OrderStatus, PaymentMethod } from '@/domain/enums'
-import type { PaymentInstruction, SentMailPreview } from '@/domain/ports/services'
+import type { FieldStatus, NewsTag, OrderStatus } from '@/domain/enums'
+import type { PaymentInstruction, OrderMailPreview } from '@/domain/ports/services'
 
 /**
  * Tvary, které use-case vrací prezentační vrstvě.
@@ -27,6 +27,7 @@ export interface VarietyView {
 }
 
 export interface BinView {
+  id: number
   name: string
   colorHex: string
   percent: number
@@ -77,7 +78,8 @@ export interface NewsView {
   imageUrl: string | null
 }
 
-export interface OrderLineView {
+interface OrderLineView {
+  varietyId: number
   varietyName: string
   quantityLabel: string
   unitPriceLabel: string
@@ -86,10 +88,12 @@ export interface OrderLineView {
 
 // Platební pokyn i náhled pošty definuje port v doméně; aplikační vrstva je jen
 // prochází dál do UI, takže vlastní tvar by byl druhá definice téhož.
-export type PaymentView = PaymentInstruction
-export type MailPreview = SentMailPreview
+type PaymentView = PaymentInstruction
+type MailPreview = OrderMailPreview
 
 export interface OrderConfirmationView {
+  isCancelled: boolean
+  cancellationReason: string | null
   code: string
   createdAtLabel: string
   customerName: string
@@ -98,6 +102,7 @@ export interface OrderConfirmationView {
   lines: OrderLineView[]
   totalKgLabel: string
   subtotalLabel: string
+  discountLabel: string | null
   deliveryFeeLabel: string
   totalLabel: string
   deliveryLabel: string
@@ -147,7 +152,10 @@ export interface UserRowView {
 
 export interface UserDetailView extends UserRowView {
   orders: OrderRowView[]
+  ordersPage: PageInfo
 }
+
+export interface PageInfo { page: number; pageSize: number; total: number }
 
 export interface AdminOverview {
   kpis: KpiView[]
@@ -164,6 +172,8 @@ export interface AdminVarietyView extends VarietyView {
 
 export interface UpsertVarietyInput {
   id: number | null
+  /** Stav z okamžiku otevření formuláře; null při zakládání odrůdy. */
+  expectedStockKg: number | null
   name: string
   tag: string
   description: string
@@ -187,5 +197,3 @@ export interface AuthResult {
   email: string
   role: 'CUSTOMER' | 'FARMER'
 }
-
-export type { DeliveryMethod, PaymentMethod }

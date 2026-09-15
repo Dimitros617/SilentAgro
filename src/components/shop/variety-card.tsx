@@ -13,7 +13,7 @@ const toStep = (value: number) => Math.round(value * 2) / 2
 
 const formatQuantity = (value: number) => String(value).replace('.', ',')
 
-export function VarietyCard({ variety }: { variety: VarietyView }) {
+export function VarietyCard({ variety }: Readonly<{ variety: VarietyView }>) {
   // Výchozích 5 kg se ořízne na sklad, aby nešlo odeslat víc, než je k dispozici.
   const [quantity, setQuantity] = useState(() => Math.min(DEFAULT_QUANTITY, variety.stockKg))
   const { dispatch, quantityOf } = useCart()

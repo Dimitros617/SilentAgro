@@ -9,7 +9,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker:build": "esbuild scripts/mail-worker.ts --bundle --platform=node --target=node22 --external:@prisma/client --outfile=dist/mail-worker.cjs",
+    "worker": "node --env-file-if-exists=.env dist/mail-worker.cjs",
     "lint": "eslint .",
+    "quality:scan": "node scripts/quality-scan.mjs",
+    "quality:sonar": "eslint src scripts prisma --config eslint.quality.config.mjs",
+    "quality:duplicates": "jscpd src scripts prisma --config .jscpd.json",
+    "quality:unused": "knip",
+    "quality:trivy": "node scripts/trivy-scan.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
@@ -28,7 +35,7 @@
     "bcryptjs": "^3.0.2",
     "jose": "^6.1.0",
     "next": "^15.5.3",
-    "nodemailer": "^7.0.6",
+    "nodemailer": "^10.0.9",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
@@ -39,16 +46,27 @@
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.55.0",
     "@types/node": "^22.18.1",
-    "@types/nodemailer": "^7.0.1",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "^4.1.11",
+    "esbuild": "^0.28.2",
     "eslint": "^9.35.0",
     "eslint-config-next": "^15.5.3",
+    "eslint-plugin-sonarjs": "4.2.0",
+    "jscpd": "5.2.0",
+    "knip": "6.35.1",
     "prisma": "^6.16.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.28"
+    },
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
   }
 }
