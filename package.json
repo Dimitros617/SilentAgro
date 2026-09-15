@@ -36,7 +36,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.16.1",
+    "@prisma/client": "^7.10.0",
     "bcryptjs": "^3.0.2",
     "jose": "^6.1.0",
     "next": "^15.5.3",
@@ -64,7 +64,7 @@
     "eslint-plugin-sonarjs": "4.2.0",
     "jscpd": "5.2.0",
     "knip": "6.35.1",
-    "prisma": "^6.16.1",
+    "prisma": "^7.10.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^4.1.11"
