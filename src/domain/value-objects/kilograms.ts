@@ -18,7 +18,7 @@ export class Kilograms {
   private constructor(private readonly amount: number) {}
 
   static of(value: number): Kilograms {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    if (!Number.isFinite(value)) {
       throw new ValidationError('Množství musí být číslo')
     }
     if (value < 0) {
@@ -30,20 +30,22 @@ export class Kilograms {
     return new Kilograms(value)
   }
 
-  static parse(input: string | number): Kilograms {
+  /** Prázdné formulářové hodnoty mají stejný význam jako prázdný text: nula. */
+  static parse(input: string | number | null | undefined): Kilograms {
     let raw: number
 
     if (typeof input === 'number') {
       raw = input
     } else {
-      const text = String(input ?? '').trim()
+      const text = (input ?? '').trim()
       // Znaménko se musí posoudit dřív, než sanitizace odstraní nečíselné znaky —
       // jinak by se z "-5" stalo "5" a překlep by tiše objednal pět kilo.
       if (text.startsWith('-')) return new Kilograms(0)
       raw = Number.parseFloat(text.replace(',', '.').replace(/[^0-9.]/g, ''))
     }
 
-    if (!Number.isFinite(raw) || raw < 0) return new Kilograms(0)
+    // Normalizujeme i číselné -0, aby se při formátování nezobrazilo „-0 kg“.
+    if (!Number.isFinite(raw) || raw <= 0) return new Kilograms(0)
     return new Kilograms(toStep(raw))
   }
 

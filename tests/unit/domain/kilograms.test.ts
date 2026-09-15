@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ValidationError } from '@/domain/errors'
 import { Kilograms } from '@/domain/value-objects/kilograms'
+import { formatKg } from '@/shared/format'
 
 describe('Kilograms.of', () => {
   it('přijme násobky půl kilogramu', () => {
@@ -17,10 +18,12 @@ describe('Kilograms.of', () => {
 
   it('odmítne zápornou hodnotu', () => {
     expect(() => Kilograms.of(-1)).toThrow(ValidationError)
+    expect(() => Kilograms.of(-1)).toThrow('Množství nesmí být záporné')
   })
 
   it('odmítne NaN a nekonečno', () => {
     expect(() => Kilograms.of(Number.NaN)).toThrow(ValidationError)
+    expect(() => Kilograms.of(Number.NaN)).toThrow('Množství musí být číslo')
     expect(() => Kilograms.of(Number.POSITIVE_INFINITY)).toThrow(ValidationError)
   })
 })
@@ -43,10 +46,30 @@ describe('Kilograms.parse', () => {
     expect(Kilograms.parse('abc').value).toBe(0)
     expect(Kilograms.parse('').value).toBe(0)
     expect(Kilograms.parse('-5').value).toBe(0)
+    expect(Kilograms.parse('  -5 kg  ').value).toBe(0)
+    expect(Kilograms.parse(Number.POSITIVE_INFINITY).value).toBe(0)
   })
 
   it('odstraní jednotku napsanou za číslem', () => {
     expect(Kilograms.parse('2,5 kg').value).toBe(2.5)
+    expect(Kilograms.parse('+2,5 kg').value).toBe(2.5)
+  })
+
+  it.each([-5, -0.1, -1e-7])('záporný číselný vstup %s převede na nulu', (value) => {
+    expect(Kilograms.parse(value).value).toBe(0)
+  })
+
+  it('velmi malé číslo zaokrouhlí podle hodnoty', () => {
+    expect(Kilograms.parse(1e-7).value).toBe(0)
+  })
+
+  it('číselnou i textovou zápornou nulu zobrazí jako nulovou hmotnost', () => {
+    expect(formatKg(Kilograms.parse('-0'))).toBe('0 kg')
+    expect(formatKg(Kilograms.parse(-0))).toBe('0 kg')
+  })
+
+  it.each([null, undefined])('prázdnou formulářovou hodnotu %s převede na nulu', (value) => {
+    expect(Kilograms.parse(value).value).toBe(0)
   })
 })
 
@@ -64,6 +87,7 @@ describe('Kilograms aritmetika', () => {
 
   it('odmítne odečtení pod nulu', () => {
     expect(() => Kilograms.of(1).minus(Kilograms.of(2))).toThrow(ValidationError)
+    expect(() => Kilograms.of(1).minus(Kilograms.of(2))).toThrow('Výsledné množství by bylo záporné')
   })
 
   it('porovnává přes gte a gt', () => {

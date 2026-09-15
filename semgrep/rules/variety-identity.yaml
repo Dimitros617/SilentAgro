@@ -1,0 +1,9 @@
+rules:
+  - id: variety-identity
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Odrůdu identifikujte pomocí ID. Název slouží k zobrazení a historickému snapshotu.
+    pattern-either:
+      - pattern: "$DB.variety.findFirst({where: {name: $NAME, ...}, ...})"
+      - pattern: "$DB.variety.findUnique({where: {name: $NAME, ...}, ...})"
+      - pattern: "{variety: {connect: {name: $NAME, ...}, ...}, ...}"

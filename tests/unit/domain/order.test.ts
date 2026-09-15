@@ -95,6 +95,19 @@ describe('Order doprava', () => {
 })
 
 describe('Order.calculateAmounts', () => {
+  it('obnovená položka zachová historickou cenu po dřívějším zaokrouhlení', () => {
+    const restored = OrderItem.rehydrate({
+      varietyId: 1,
+      varietyName: 'Původní název',
+      unitPrice: Money.fromCzk(19.99),
+      quantity: Kilograms.of(2.5),
+      lineTotal: Money.fromCzk(49.97),
+    })
+    expect(restored.lineTotal.czk).toBe(49.97)
+    expect(Order.subtotalFor([restored]).czk).toBe(49.97)
+    expect(order([restored]).pricingVersion).toBe(1)
+  })
+
   it('odečte slevu na haléře a zachová poplatek za dopravu', () => {
     const amounts = Order.calculateAmounts(Money.fromCzk(100.50), Money.fromCzk(60), Money.fromCzk(20.25))
     expect(amounts.subtotal.czk).toBe(100.50)

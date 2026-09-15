@@ -41,6 +41,8 @@ jobs:
 
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run quality:architecture:test
+      - run: npm run quality:architecture
       - run: npm run test -- --coverage
 
       - uses: actions/upload-artifact@v4
@@ -49,6 +51,44 @@ jobs:
           name: coverage
           path: coverage/
           retention-days: 7
+
+  semgrep:
+    name: Semgrep – pravidla projektu
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm run quality:semgrep:test
+      - run: npm run quality:semgrep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-reports
+          path: reports/quality/semgrep*.json
+          retention-days: 14
+
+  mutation:
+    name: Stryker – objednávky a peníze
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run quality:mutation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/quality/mutation/
+          retention-days: 14
 
   integration:
     name: Integrační testy proti MySQL

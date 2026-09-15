@@ -8,8 +8,9 @@ permissions:
 
 jobs:
   local-analyzers:
-    name: SonarJS, duplicity, nepoužívaný kód a Trivy
+    name: Statická analýza, architektura a kvalita testů
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,11 +19,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npm run quality:architecture:test
       - name: Kvalita zdrojového kódu
         run: npm run quality:scan
       - name: Závislosti a konfigurace
         if: ${{ !cancelled() }}
         run: npm run quality:trivy
+      - name: Ověření pravidel Semgrepu
+        if: ${{ !cancelled() }}
+        run: npm run quality:semgrep:test
+      - name: Semgrep
+        if: ${{ !cancelled() }}
+        run: npm run quality:semgrep
+      - name: Mutační testování
+        if: ${{ !cancelled() }}
+        run: npm run quality:mutation
       - name: Pokrytí testy
         if: ${{ !cancelled() }}
         run: npm test -- --coverage

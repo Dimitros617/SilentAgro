@@ -25,17 +25,40 @@ describe('Money', () => {
 
   it('odmítne odečtení pod nulu', () => {
     expect(() => Money.fromCzk(10).minus(Money.fromCzk(20))).toThrow(ValidationError)
+    expect(() => Money.fromCzk(10).minus(Money.fromCzk(20))).toThrow('Výsledná částka by byla záporná')
   })
 
   it('odmítne zápornou částku a NaN', () => {
     expect(() => Money.fromCzk(-1)).toThrow(ValidationError)
+    expect(() => Money.fromCzk(-1)).toThrow('Částka nesmí být záporná')
     expect(() => Money.fromCzk(Number.NaN)).toThrow(ValidationError)
+    expect(() => Money.fromCzk(Number.NaN)).toThrow('Částka musí být číslo')
   })
 
   it('porovnává přes gt a gte', () => {
     expect(Money.fromCzk(601).gt(Money.fromCzk(600))).toBe(true)
     expect(Money.fromCzk(600).gt(Money.fromCzk(600))).toBe(false)
     expect(Money.fromCzk(600).gte(Money.fromCzk(600))).toBe(true)
+    expect(Money.fromCzk(599).gte(Money.fromCzk(600))).toBe(false)
+  })
+
+  it('obnoví částku z celých haléřů včetně nuly', () => {
+    expect(Money.fromHellers(1999).czk).toBe(19.99)
+    expect(Money.fromHellers(0).haleru).toBe(0)
+    expect(Money.fromCzk(0).haleru).toBe(0)
+  })
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('odmítne neplatný počet haléřů %s', (hellers) => {
+    expect(() => Money.fromHellers(hellers)).toThrow(ValidationError)
+    expect(() => Money.fromHellers(hellers)).toThrow('Částka v haléřích musí být nezáporné celé číslo')
+  })
+
+  it('porovnává hodnotu částky a rozliší nulu od kladné částky', () => {
+    const amount = Money.fromHellers(1234)
+    expect(amount.equals(Money.fromCzk(12.34))).toBe(true)
+    expect(amount.equals(Money.fromHellers(1235))).toBe(false)
+    expect(amount.isZero()).toBe(false)
+    expect(Money.zero().isZero()).toBe(true)
   })
 
   it('sečte tisíc půlkilových položek bez driftu', () => {

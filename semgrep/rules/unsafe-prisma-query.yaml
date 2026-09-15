@@ -1,0 +1,8 @@
+rules:
+  - id: unsafe-prisma-query
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Použijte parametrizovaný Prisma SQL template; Unsafe API zde není povolené.
+    pattern-either:
+      - pattern: $DB.$queryRawUnsafe(...)
+      - pattern: $DB.$executeRawUnsafe(...)

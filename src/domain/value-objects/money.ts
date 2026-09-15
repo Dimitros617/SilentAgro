@@ -12,7 +12,7 @@ export class Money {
   private constructor(private readonly hellers: number) {}
 
   static fromCzk(czk: number): Money {
-    if (typeof czk !== 'number' || !Number.isFinite(czk)) {
+    if (!Number.isFinite(czk)) {
       throw new ValidationError('Částka musí být číslo')
     }
     if (czk < 0) throw new ValidationError('Částka nesmí být záporná')

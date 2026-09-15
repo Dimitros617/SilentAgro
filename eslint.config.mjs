@@ -14,6 +14,8 @@ const config = [
       'coverage/**',
       'reports/**',
       '.scannerwork/**',
+      '.stryker-tmp/**',
+      'tests/scanners/**',
       'playwright-report/**',
       'test-results/**',
       'next-env.d.ts',

@@ -1,0 +1,13 @@
+rules:
+  - id: detached-transaction
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Na dokončení transakce čekejte pomocí await nebo vraťte její Promise volajícímu.
+    patterns:
+      - pattern: $DB.$transaction(...)
+      - pattern-not-inside: await $DB.$transaction(...)
+      - pattern-not-inside: return $DB.$transaction(...)
+      - pattern-not-inside: $RESULT = $DB.$transaction(...)
+      - pattern-not-inside: $DB.$transaction(...).then(...)
+      - pattern-not-inside: $DB.$transaction(...).catch(...)
+      - pattern-not-inside: "[... , $DB.$transaction(...), ...]"

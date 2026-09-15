@@ -8,8 +8,33 @@ Lokální SonarJS není kompletní analýza SonarQube Server/Cloud.
 
 Průběh oprav a jejich ověření je v [seznamu nápravných kroků](code-quality-remediation.md).
 Výchozí měření před opravami je oddělené od aktuálního stavu níže.
+Přímé [srovnání před review a nyní](code-quality-comparison.md) navíc obsahuje
+nové měření staršího commitu současnými nástroji a vysvětluje rozdíl metodik coverage.
 
-## Aktuální stav po navazující kontrole — 15. 9. 2026
+## Aktuální stav po přidání architektonických skenerů — 15. 9. 2026
+
+Návod, pravidla a rozsah jsou v [kontrolách architektury a mutací](architecture-scanners.md).
+
+| Kontrola | Výsledek |
+|---|---|
+| dependency-cruiser 18.3.1 | 150 modulů, 524 závislostí, 0 chyb a 0 varování; 6 regresních testů pravidel prošlo |
+| Semgrep CE 1.177.0 | 4 lokální pravidla nad 138 soubory, 0 nálezů, 0 chyb analýzy; všechny 4 sady testovacích ukázek prošly |
+| StrykerJS 10.0.0 | Po Q12: 99,67 %; 300 mutací, 299 odhalených, 1 zdůvodněná ekvivalentní, 0 bez pokrytí; rozsah 5 souborů |
+| Unit / coverage | 443 testů; doména a aplikace: 93,95 % řádků, 86,54 % větví, 90,97 % funkcí |
+| SonarJS / Knip / jscpd | SonarJS 0; běžný Knip 0; produkční Knip dál `review` s 1 souborem a 6 exporty; 4 shody / 27 řádků / 0,22 % |
+| npm audit | Nový úplný i produkční audit 0; opravená podzávislost `qs` přidaná se Strykerem |
+| ESLint / TypeScript | Prošly po zapojení nástrojů a doplnění testů |
+| Sestavení | Produkční Next.js build i bundle poštovního workeru prošly |
+
+Konfigurace CI nově obsahuje kontrolu architektury, Semgrep i samostatný Stryker
+job s minimálním skóre 80 %. Jde o lokální výsledky; workflow na GitHubu v této
+vlně nebyl spuštěn. Integrační, E2E a Trivy testy nebyly v této vlně opakovány.
+Všech 26 původních zbylých nálezů je zpracovaných v rámci Q12; jedna konkrétní
+[ekvivalentní mutace](architecture-scanners.md#posouzená-ekvivalentní-mutace)
+zůstává viditelná v reportu. Srovnání se skóre 91,56 % zahrnuje i zjednodušení
+dvou redundantních kontrol typu, takže se počet generovaných mutací změnil z 308 na 300.
+
+## Předchozí stav po úpravách fronty a seznamů — 15. 9. 2026
 
 | Kontrola | Aktuální výsledek |
 |---|---|

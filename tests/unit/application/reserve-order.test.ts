@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { ReserveOrder } from '@/application/use-cases/reserve-order'
+import { ReserveOrder, type ReserveOrderInput } from '@/application/use-cases/reserve-order'
 import { DeliveryMethod, PaymentMethod } from '@/domain/enums'
-import { InsufficientStockError, ValidationError } from '@/domain/errors'
+import { ConflictError, InsufficientStockError, ValidationError } from '@/domain/errors'
 import {
   FakeMailer,
   RecordingLogger,
@@ -19,6 +19,18 @@ const customer = {
   email: 'jan@email.cz',
   phone: '+420777123456',
   note: '',
+}
+
+function reservationInput(overrides: Partial<ReserveOrderInput> = {}): ReserveOrderInput {
+  return {
+    requestKey: randomUUID(),
+    customer,
+    delivery: DeliveryMethod.PICKUP,
+    payment: PaymentMethod.CASH,
+    items: [{ varietyId: 1, quantityKg: 1 }],
+    userId: null,
+    ...overrides,
+  }
 }
 
 const setup = (options: { varieties?: ReturnType<typeof makeVariety>[]; mailerFails?: boolean } = {}) => {
@@ -42,14 +54,78 @@ const reserve = (
   items: { varietyId: number; quantityKg: number }[],
   overrides: Partial<{ delivery: DeliveryMethod; payment: PaymentMethod; note: string }> = {},
 ) =>
-  useCase.execute({
-    requestKey: randomUUID(),
+  useCase.execute(reservationInput({
     customer: { ...customer, note: overrides.note ?? '' },
     delivery: overrides.delivery ?? DeliveryMethod.PICKUP,
     payment: overrides.payment ?? PaymentMethod.CASH,
     items,
-    userId: null,
+  }))
+
+describe('ReserveOrder — identita opakovaného pokusu', () => {
+  const requestKey = 'abcdef12-3456-7890-abcd-123456789abc'
+
+  it.each(['', 'neplatný-klíč', `x${requestKey}`, `${requestKey}x`])('odmítne neplatný klíč %s před zápisem', async (key) => {
+    const ctx = setup()
+    await expect(ctx.useCase.execute(reservationInput({ requestKey: key }))).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'Chybí platný identifikátor pokusu o rezervaci',
+    })
+    expect(ctx.orders.last()).toBeUndefined()
+    expect(ctx.outbox.messages).toHaveLength(0)
   })
+
+  it('opakování normalizovaných údajů zachová objednávku i sklad', async () => {
+    const ctx = setup({ varieties: [makeVariety({ id: 1, stockKg: 10 }), makeVariety({ id: 2, stockKg: 10 })] })
+    const input = reservationInput({
+      requestKey,
+      customer: { ...customer, note: 'U brány' },
+      items: [{ varietyId: 1, quantityKg: 2 }, { varietyId: 2, quantityKg: 1 }],
+    })
+    const first = await ctx.useCase.execute(input)
+    const repeated = await ctx.useCase.execute({
+      ...input,
+      requestKey: requestKey.toUpperCase(),
+      customer: { ...customer, name: ` ${customer.name} `, phone: ` ${customer.phone} `, note: ' U brány ' },
+      items: [{ varietyId: 2, quantityKg: 1 }, { varietyId: 1, quantityKg: 1 }, { varietyId: 1, quantityKg: 1 }],
+    })
+    expect(repeated).toEqual(first)
+    expect(ctx.varieties.get(1)?.stock.value).toBe(8)
+    expect(ctx.varieties.get(2)?.stock.value).toBe(9)
+    expect(ctx.outbox.messages).toHaveLength(2)
+    // Klíče už uložených pokusů musí zůstat kompatibilní s dalšími verzemi aplikace.
+    expect([...ctx.reservationRequests.items.keys()]).toEqual([requestKey])
+  })
+
+  it('při chybějící původní objednávce nevytvoří náhradní rezervaci', async () => {
+    const ctx = setup()
+    const input = reservationInput({ requestKey })
+    await ctx.useCase.execute(input)
+    ctx.orders.items.clear()
+
+    await expect(ctx.useCase.execute(input)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Původní rezervace nenalezena',
+    })
+    expect(ctx.orders.items.size).toBe(0)
+    expect(ctx.varieties.get(1)?.stock.value).toBe(9)
+    expect(ctx.outbox.messages).toHaveLength(2)
+  })
+
+  it.each<Partial<ReserveOrderInput>>([
+    { customer: { ...customer, email: 'jiny@email.cz' } },
+    { items: [{ varietyId: 1, quantityKg: 2 }] },
+    { payment: PaymentMethod.BANK_TRANSFER },
+    { delivery: DeliveryMethod.LOCAL_DELIVERY },
+    { userId: 42 },
+  ])('stejný klíč s jiným obsahem odmítne: %j', async (changed) => {
+    const ctx = setup()
+    const input = reservationInput({ requestKey })
+    await ctx.useCase.execute(input)
+    await expect(ctx.useCase.execute({ ...input, ...changed })).rejects.toThrow(ConflictError)
+    expect(ctx.varieties.get(1)?.stock.value).toBe(9)
+    expect(ctx.outbox.messages).toHaveLength(2)
+  })
+})
 
 describe('ReserveOrder — úspěšná rezervace', () => {
   it('odečte sklad, uloží objednávku a zařadí dva e-maily do fronty', async () => {
@@ -148,7 +224,10 @@ describe('ReserveOrder — odmítnuté vstupy', () => {
 
   it('odmítne prázdný košík', async () => {
     const ctx = setup()
-    await expect(reserve(ctx.useCase, [])).rejects.toThrow(ValidationError)
+    await expect(reserve(ctx.useCase, [])).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'Košík je prázdný',
+    })
   })
 
   it('odmítne košík, kde jsou jen nulové položky', async () => {

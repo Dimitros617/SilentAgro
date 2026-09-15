@@ -193,6 +193,9 @@ odeslání opakuje. Podrobnosti včetně spuštění mimo Docker popisuje
 Nástrojové review, skutečné nálezy a opakovatelné skeny popisuje
 [Code quality review](docs/code-quality-review.md), včetně nastavení SonarQube Cloud pro osobní projekt.
 
+[Kontroly architektury a mutační testování](docs/architecture-scanners.md) popisují
+dependency-cruiser, lokální pravidla Semgrepu, Stryker a jejich spouštění v CI.
+
 Vše, co se nastavuje, je v `.env.example` i s vysvětlením. Jediná výjimka je
 `UPLOAD_DIR`: cestu ke složce s fotkami určuje compose napevno, aby odpovídala
 připojenému svazku — přepsatelná hodnota by ukládala mimo svazek a po restartu by
@@ -392,7 +395,9 @@ jinou verzi, než jaká běžela před ním.
 
 | Úloha | Co dělá |
 |---|---|
-| `quality` | eslint, `tsc --noEmit`, unit testy s pokrytím |
+| `quality` | eslint, `tsc --noEmit`, hranice a cykly architektury, unit testy s pokrytím |
+| `semgrep` | testy lokálních pravidel a sken zdrojového kódu |
+| `mutation` | Stryker nad částkami, množstvím a objednávkami; minimální skóre 80 % |
 | `integration` | MySQL jako service container, migrace, integrační testy |
 | `e2e` | celá sestava v Dockeru, seed, Playwright |
 | `security` | audit produkčních závislostí, gitleaks, Trivy sken image |

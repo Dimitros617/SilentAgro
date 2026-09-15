@@ -8,6 +8,11 @@ mkdirSync(output, { recursive: true })
 
 const checks = [
   {
+    name: 'dependency-cruiser',
+    args: ['node_modules/dependency-cruiser/bin/dependency-cruiser.mjs', '--config', '.dependency-cruiser.mjs', '--output-type', 'json', 'src'],
+    report: 'architecture.json',
+  },
+  {
     name: 'SonarJS',
     args: ['node_modules/eslint/bin/eslint.js', 'src', 'scripts', 'prisma', '--config', 'eslint.quality.config.mjs', '--format', 'json'],
     report: 'sonarjs.json',
@@ -40,6 +45,16 @@ function hasKnipFindings(output) {
   }
 }
 
+function architectureStatus(output) {
+  // JSON reporter dependency-cruiseru má vždy exit 0; nálezy jsou v summary.
+  const { summary } = JSON.parse(output)
+  if (!(summary.totalCruised > 0) || !Number.isInteger(summary.error) || !Number.isInteger(summary.warn)) {
+    throw new Error('Neplatný nebo prázdný report architektury')
+  }
+  if (summary.error > 0) return 'failed'
+  return summary.warn > 0 ? 'review' : 'passed'
+}
+
 const results = []
 for (const check of checks) {
   console.info(`Running ${check.name}...`)
@@ -51,6 +66,14 @@ for (const check of checks) {
   if (result.error) console.error(result.error.message)
   const exitCode = result.status ?? 2
   let status = exitCode === 0 ? 'passed' : 'failed'
+  if (check.name === 'dependency-cruiser' && exitCode === 0) {
+    try {
+      status = architectureStatus(result.stdout)
+    } catch (error) {
+      console.error(error.message)
+      status = 'failed'
+    }
+  }
   if (check.reviewFindings && exitCode === 1 && !result.error && hasKnipFindings(result.stdout)) {
     status = 'review'
   }

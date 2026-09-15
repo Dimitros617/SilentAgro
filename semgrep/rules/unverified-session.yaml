@@ -1,0 +1,16 @@
+rules:
+  - id: unverified-session
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: decodeJwt neověřuje podpis. Pro autentizaci použijte ověřování session přes jwtVerify.
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              import { decodeJwt as $DECODE } from 'jose';
+              ...
+          - pattern: $DECODE(...)
+      - patterns:
+          - pattern-inside: |
+              import * as $JOSE from 'jose';
+              ...
+          - pattern: $JOSE.decodeJwt(...)

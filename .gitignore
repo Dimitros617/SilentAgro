@@ -5,6 +5,8 @@ dist/
 coverage/
 reports/
 .scannerwork/
+.stryker-tmp/
+stryker.log
 playwright-report/
 test-results/
 *.tsbuildinfo

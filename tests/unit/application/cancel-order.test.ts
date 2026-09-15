@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { CancelOrder } from '@/application/use-cases/cancel-order'
 import { OrderItem } from '@/domain/entities/order'
 import { DeliveryMethod, OrderStatus, PaymentMethod } from '@/domain/enums'
-import { ConflictError, NotFoundError, ValidationError } from '@/domain/errors'
 import { EmailAddress } from '@/domain/value-objects/email-address'
 import { Kilograms } from '@/domain/value-objects/kilograms'
 import { Money } from '@/domain/value-objects/money'
@@ -102,24 +101,56 @@ describe('CancelOrder', () => {
     const ctx = await setup({ stockKg: 10, orderKg: 2.5 })
     await ctx.useCase.execute(1, 'Kroupy zničily úrodu.')
 
-    await expect(ctx.useCase.execute(1, 'Znovu')).rejects.toThrow(ConflictError)
+    await expect(ctx.useCase.execute(1, 'Znovu')).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'Objednávka už je zrušená',
+    })
     expect(ctx.varieties.get(1)?.stock.value).toBe(12.5)
   })
 
   it('odmítne prázdný důvod', async () => {
     const ctx = await setup()
-    await expect(ctx.useCase.execute(1, '   ')).rejects.toThrow(ValidationError)
+    await expect(ctx.useCase.execute(1, '   ')).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'Napište důvod zrušení — zákazník ho dostane e-mailem',
+    })
     expect(ctx.orders.get(1)?.isCancelled).toBe(false)
   })
 
   it('odmítne příliš dlouhý důvod', async () => {
     const ctx = await setup()
-    await expect(ctx.useCase.execute(1, 'a'.repeat(1001))).rejects.toThrow(ValidationError)
+    await expect(ctx.useCase.execute(1, 'a'.repeat(1001))).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'Důvod zrušení je příliš dlouhý',
+    })
+  })
+
+  it.each([3, 1000])('přijme důvod přesně na hranici %i znaků', async (length) => {
+    const ctx = await setup()
+    const reason = 'a'.repeat(length)
+    await ctx.useCase.execute(1, reason)
+    expect(ctx.orders.get(1)?.cancellationReason).toBe(reason)
+    expect(ctx.outbox.items.has('order:1:cancelled')).toBe(true)
   })
 
   it('u neexistující objednávky skončí chybou', async () => {
     const ctx = await setup()
-    await expect(ctx.useCase.execute(999, 'Důvod')).rejects.toThrow(NotFoundError)
+    await expect(ctx.useCase.execute(999, 'Důvod')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Objednávka nenalezena',
+    })
+  })
+
+  it('při chybějící odrůdě objednávku nezruší ani nezařadí oznámení', async () => {
+    const ctx = await setup()
+    ctx.varieties.items.clear()
+
+    await expect(ctx.useCase.execute(1, 'Zákazník si to rozmyslel.')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Odrůda objednávky nenalezena',
+    })
+    expect(ctx.orders.get(1)?.isCancelled).toBe(false)
+    expect(ctx.outbox.messages).toHaveLength(0)
   })
 
   it('vrátí i množství nad kapacitu zásobníku', async () => {

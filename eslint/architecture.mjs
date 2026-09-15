@@ -1,14 +1,8 @@
 import path from 'node:path'
 import { builtinModules } from 'node:module'
+import { allowedLayers } from '../architecture/layers.mjs'
 
 const srcRoot = path.resolve(import.meta.dirname, '../src')
-const allowedLayers = {
-  shared: ['shared'],
-  domain: ['domain', 'shared'],
-  application: ['application', 'domain', 'shared'],
-  infrastructure: ['infrastructure', 'application', 'domain', 'shared'],
-  components: ['components', 'domain', 'shared'],
-}
 
 const serverPackages = ['@prisma/client', 'prisma', 'nodemailer', 'bcryptjs', 'server-only', 'next/headers', 'next/cache', 'next/server']
 

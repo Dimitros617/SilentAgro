@@ -6,6 +6,8 @@ dist
 coverage
 reports
 .scannerwork
+.stryker-tmp
+stryker.log
 playwright-report
 test-results
 temp
@@ -15,6 +17,7 @@ tests
 playwright.config.ts
 playwright-report
 vitest.config.ts
+vitest.mutation.config.ts
 docs
 public/uploads/*
 !public/uploads/.gitkeep

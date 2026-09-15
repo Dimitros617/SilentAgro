@@ -15,12 +15,33 @@ tento dokument a původní shrnutí auditu zachovávají výsledky v repozitář
 | Q3 | Další nálezy SonarJS | Hotovo | SonarJS 0; readonly props, aktuální Zod API, bezpečnější regexy, pojmenované podmínky a ověřené dialogy. |
 | Q4 | Nepoužívaný kód a exporty | Opraveno; evidované výjimky | Běžný Knip 0. Produkční Knip stále hlásí 1 soubor a 6 exportů; důvody jejich ponechání jsou níže. Jeho stav je `review`, nikoli čistý scan. |
 | Q5 | Duplicity | Opraveno; posouzený zbytek | Sjednocen seed, dokončení přihlášení, KPI komponenta a úprava textových filtrů. Zbývají 4 shody / 27 řádků / 0,22 %; jednotlivě posouzené níže. |
-| Q6 | Pokrytí přehledu administrace a katalogu | Doplněno o hraniční případy | Aktuálně 415 unit testů; pokrytí domény a aplikace 92,40 % řádků a 83,15 % větví. Limity novinek, neaktivní odrůdy, třicetidenní hranice, uložená sleva i autorizace mají regresní scénáře. Nejde o pokrytí celé aplikace. |
+| Q6 | Pokrytí přehledu administrace a katalogu | Doplněno o hraniční případy | Po Q12 celkem 443 unit testů; pokrytí domény a aplikace 93,95 % řádků a 86,54 % větví. Limity novinek, neaktivní odrůdy, třicetidenní hranice, uložená sleva i autorizace mají regresní scénáře. Nejde o pokrytí celé aplikace. |
 | Q7 | Zranitelnost vývojového Vitestu | Hotovo | Vitest a coverage provider `3.2.7 → 4.1.11`; úplný i produkční audit 0, unit testy a coverage prošly. |
 | Q8 | Čitelnost a chybové stavy poštovní fronty | Hotovo | Odděleno odeslání a potvrzení, zachována původní chyba při selhání odložení. Pojmenované převody příloh a validace Base64. 17 nových unit scénářů, 2 další integrační případy a běh sestaveného workeru s memory odesílatelem. |
 | Q9 | Validace a čitelnost seznamů | Hotovo | Jedno pravidlo trim/120 znaků v aplikační vrstvě, pojmenované limity stránek, čitelnější načítání uživatelů a navigace. Nový integrační test ověřuje oba seznamy se stejným dlouhým filtrem. |
+| Q10 | dependency-cruiser, Semgrep, Stryker a CI | Zapojeno a lokálně ověřeno | Architektura 0, Semgrep 0; testy pravidel prošly. Stryker po Q12: 300 mutací v 5 souborech. [Návod a rozsah](architecture-scanners.md). |
+| Q11 | Mezery v testech z prvního mutačního běhu | Hotovo | První vlna: 19 nových unit scénářů, tehdy 434 testů celkem. Mutační skóre 78,57 → 91,56 % při nezměněném rozsahu a hranici. Peníze, identita rezervace, storno a uložené ceny. |
+| Q12 | Zbylé mutace a síla testů obranných větví | Zpracováno; 1 zdůvodněná ekvivalentní mutace | 9 dalších scénářů, 443 testů celkem. Stryker 99,67 %: 299 odhalených, 1 ekvivalentní, 0 bez pokrytí. [Odůvodnění poslední mutace](architecture-scanners.md#posouzená-ekvivalentní-mutace); žádné potlačení skeneru. |
 
 ## Záznam oprav
+
+- 15. 9. 2026, zpracování Q12: doplněny chybějící vazby při rezervaci/stornu,
+  záporné a malé číselné vstupy, prázdná hodnota parseru, texty doménových chyb
+  a kanonický klíč pro uložení rezervace. Test pro číselné `-0` nejprve odhalil
+  formátování „-0 kg“; parser nyní vrací běžnou nulu. Typ parseru přiznává
+  dosavadní zpracování `null`/`undefined`, dvě redundantní kontroly `typeof`
+  byly odstraněny. Mutační běh: 299/300 odhalených, 1 konkrétní ekvivalentní
+  mutace s odůvodněním, 0 bez pokrytí. Pravidla ani hranice nejsou oslabené.
+  Všech 443 unit testů, lint, typecheck a statická analýza prošly.
+
+- 15. 9. 2026: zapojeny tři nové nástroje a jejich CI kroky. Mapa vrstev je společná
+  pro ESLint a dependency-cruiser. Lokální pravidla Semgrepu mají pozitivní i negativní
+  ukázky; jejich první verze odhalila falešné poplachy u zpracovaných transakcí,
+  které byly opravené v pravidle, nikoli potlačením hlášení ve zdrojích.
+  Stryker běží pouze nad unit testy v dočasné kopii. Jeho první skóre 78,57 %
+  bylo pod hranicí 80 %; po doplnění testů má 91,56 %. Zbytek je evidovaný jako Q12.
+  Úzký override `typed-rest-client.qs` na 6.16.0 opravil dvě nová hlášení auditu
+  vývojových závislostí; aktuální úplný i produkční audit mají 0 nálezů.
 
 - 14. 9. 2026: založena evidence postupu a zachovány výchozí raw reporty.
   SonarQube Cloud stále není aktivovaný; podkladem jsou lokální deterministické skenery.
