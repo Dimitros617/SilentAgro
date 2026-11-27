@@ -29,9 +29,9 @@ jobs:
     name: Lint, typecheck a unit testy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -45,7 +45,7 @@ jobs:
       - run: npm run quality:architecture
       - run: npm run test -- --coverage
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage
@@ -57,15 +57,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
       - run: npm run quality:semgrep:test
       - run: npm run quality:semgrep
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: semgrep-reports
@@ -77,15 +77,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
       - run: npx prisma generate
       - run: npm run quality:mutation
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report
@@ -115,9 +115,9 @@ jobs:
       TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/silentagro_test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -134,7 +134,7 @@ jobs:
     name: End-to-end proti sestavě v Dockeru
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Připravit .env s náhodnými tajemstvími
         run: |
@@ -184,7 +184,7 @@ jobs:
         # Seeder je jednorázový kontejner ze stage builder — runtime image tsx nemá.
         run: docker compose --profile seed run --rm -e SEED_FARMER_PASSWORD="$E2E_FARMER_PASSWORD" seeder
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -200,7 +200,7 @@ jobs:
         if: failure()
         run: docker compose logs --no-color
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
@@ -215,11 +215,11 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -234,7 +234,7 @@ jobs:
       - name: Hledání tajemství v historii
         # Připnuto na commit, ne na značku. Značku u cizí akce lze přesunout a tahle
         # dostává GITHUB_TOKEN i licenční klíč — přepsaná značka by je odeslala komukoli.
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
@@ -259,7 +259,7 @@ jobs:
           exit-code: '1'
 
       - name: Odeslat nálezy do Security tabu
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         # `always()` schválně: když Trivy najde chybu a skončí nenulově, výsledek
         # se musí nahrát tím spíš.
         if: always()
